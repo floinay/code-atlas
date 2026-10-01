@@ -14,7 +14,8 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import fixture from '@code-atlas/model/fixtures/prototype.model.json';
 
-export type Mode = 'loading' | 'live' | 'demo';
+/** `static` shows a model file given as `?model=<url>`: no server, no demo. */
+export type Mode = 'loading' | 'live' | 'demo' | 'static';
 export type Atlas = {
   mode: Mode;
   connected: boolean;
@@ -173,6 +174,50 @@ export function useAtlas() {
         timer = setTimeout(() => connect(false), 500 * 2 ** retry);
       };
     };
+
+    const startStatic = async (url: string) => {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`${url}: ${response.status}`);
+      const model = Model.parse(await response.json());
+      const view = buildView(model);
+      if (closed) return;
+      setState({
+        ...initial(model, 'static'),
+        epoch: 1,
+        feed: [
+          {
+            at: new Date().toISOString(),
+            kind: 'info',
+            subject: {
+              type: 'extracted',
+              domains: model.domains.length,
+              elements: model.elements.filter((e) => e.kind !== 'external').length,
+              edges: view.edges.length,
+              ms: 0,
+            },
+            file: url,
+          },
+        ],
+      });
+    };
+
+    const snapshot = new URLSearchParams(location.search).get('model');
+    if (snapshot) {
+      startStatic(snapshot).catch((error: unknown) => {
+        if (closed) return;
+        startDemo();
+        setState((previous) => ({
+          ...previous,
+          feed: [
+            { at: new Date().toISOString(), kind: 'warn', subject: { type: 'error', message: String(error) } },
+            ...previous.feed,
+          ],
+        }));
+      });
+      return () => {
+        closed = true;
+      };
+    }
 
     fetch('/api/health')
       .then((response) => (response.ok ? response.json() : Promise.reject(new Error('no server'))))

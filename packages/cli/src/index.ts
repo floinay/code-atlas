@@ -1,2 +1,3 @@
-/** `serve` and `extract` land in milestone 4. */
-export const NAME = 'code-atlas';
+export { main } from './main.ts';
+export { runExtraction } from './pipeline.ts';
+export { loadDomainsConfig } from './config.ts';

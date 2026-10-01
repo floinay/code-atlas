@@ -106,6 +106,7 @@ export const t = {
   live: 'живе',
   offline: 'немає зв’язку',
   demo: 'демо',
+  snapshot: 'знімок',
   demoRun: 'Агент додає фічу',
   demoReset: 'Скинути демо',
   newBadge: 'НОВЕ',

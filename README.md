@@ -19,6 +19,10 @@ Early. See [CHANGELOG.md](CHANGELOG.md) for what each milestone added.
 ```bash
 pnpm install
 pnpm dev          # the web app on http://localhost:5273, with the bundled fixture
+
+# Extract a repository and look at it
+pnpm atlas extract ../my-repo --out apps/web/public/model.json
+open "http://localhost:5273/?model=/model.json"
 ```
 
 ## Layout
@@ -29,7 +33,7 @@ pnpm dev          # the web app on http://localhost:5273, with the bundled fixtu
 | `packages/extractor-yeda` | Reads a Yeda monorepo with the TypeScript compiler API. |
 | `packages/cli` | `code-atlas serve` and `code-atlas extract`. |
 | `apps/web` | The map: React, Vite and a hand-written SVG canvas. |
-| `docs` | [The model](docs/model.md), [the web app](docs/web.md). |
+| `docs` | [The model](docs/model.md), [the web app](docs/web.md), [the Yeda extractor](docs/extractor-yeda.md). |
 
 ## Develop
 

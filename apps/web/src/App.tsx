@@ -111,6 +111,8 @@ export function App() {
   const status =
     atlas.mode === 'demo'
       ? { className: 'live demo', text: `${model.repo.branch ?? 'main'} · ${t.demo}` }
+      : atlas.mode === 'static'
+        ? { className: 'live demo', text: `${model.repo.branch ?? 'main'} · ${t.snapshot}` }
       : atlas.connected
         ? { className: 'live', text: `${model.repo.branch ?? 'main'} · ${t.live}` }
         : { className: 'live off', text: t.offline };

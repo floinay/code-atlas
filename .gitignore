@@ -5,3 +5,6 @@ dist
 coverage
 /model.json
 .code-atlas/layout.json
+.yeda-path
+.claude/
+apps/web/public/model.json

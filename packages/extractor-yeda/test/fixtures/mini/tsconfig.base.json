@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/platform/*": ["./libs/platform/*/src/index.ts"],
+      "@/orders/contracts": ["./features/orders/contracts/src/index.ts"],
+      "@/billing/contracts": ["./features/billing/contracts/src/index.ts"]
+    }
+  }
+}

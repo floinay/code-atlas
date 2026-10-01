@@ -44,6 +44,8 @@ export function collapseDomains(model: Model, explore: string[]): Model {
       continue;
     }
     if (!keepSource && !keepTarget) continue;
+    // What a collapsed domain does with an external system is its own business.
+    if ((keepSource ? source : target).domain === null) continue;
     const folded = {
       ...edge,
       source: keepSource ? edge.source : blockFor(source),
@@ -64,11 +66,14 @@ export function collapseDomains(model: Model, explore: string[]): Model {
     );
   }
 
-  const elements = model.elements.filter(kept).map((element) =>
-    element.kind === 'command' || element.kind === 'worker'
-      ? { ...element, appends: element.appends.filter((id) => kept(byId.get(id))) }
-      : element,
-  );
+  const linked = new Set(edges.flatMap((e) => [e.source, e.target]));
+  const elements = model.elements
+    .filter((element) => kept(element) && (element.domain !== null || linked.has(element.id)))
+    .map((element) =>
+      element.kind === 'command' || element.kind === 'worker'
+        ? { ...element, appends: element.appends.filter((id) => kept(byId.get(id))) }
+        : element,
+    );
   const checks = model.checks
     .filter((check) => kept(byId.get(check.element)))
     .map((check) => ({
