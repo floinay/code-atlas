@@ -63,6 +63,8 @@ type Local =
   | { kind: 'function'; node: ts.FunctionDeclaration };
 
 const UNKNOWN: Value = { k: 'unknown' };
+/** `fetch` and `globalThis.fetch`. Adapters match it with the rule `/^fetch$/`. */
+const FETCH: Value = { k: 'ext', spec: 'fetch', name: 'fetch' };
 const MAX_DEPTH = 80;
 const memo = (compute: () => Value): Thunk => {
   let value: Value | undefined;
@@ -95,6 +97,8 @@ export class Evaluator {
     readonly ws: Workspace,
     private inlinable: (file: string) => boolean,
     private inlinePlatform: Set<string> = new Set(),
+    /** The files being read, for finding where a function is called. */
+    private sources: () => string[] = () => [],
   ) {}
 
   /** Whether calls to this function are followed. */
@@ -205,7 +209,13 @@ export class Evaluator {
     if (ts.isConditionalExpression(node)) {
       // The condition is a runtime matter; whichever branch holds a value is what the name can be.
       const whenTrue = this.eval(node.whenTrue, scope);
-      return isMissing(whenTrue) ? this.eval(node.whenFalse, scope) : whenTrue;
+      if (isMissing(whenTrue)) return this.eval(node.whenFalse, scope);
+      // `...(x === undefined ? {} : { send: x.send })`: the empty branch says nothing.
+      if (whenTrue.k === 'obj' && whenTrue.props.size === 0) {
+        const whenFalse = this.eval(node.whenFalse, scope);
+        if (whenFalse.k === 'obj') return whenFalse;
+      }
+      return whenTrue;
     }
     return { k: 'unknown', node, scope };
   }
@@ -320,9 +330,65 @@ export class Evaluator {
         : (args[index] ?? UNKNOWN);
       // `({ makeClient = createClient } = {})`: a missing argument takes its default.
       if (parameter.initializer && isMissing(arg)) arg = this.eval(parameter.initializer, scope);
+      if (parameter.type) arg = this.typed(arg, parameter.type, fn.scope);
       this.bindPattern(parameter.name, arg, values, scope);
     });
     return scope;
+  }
+
+  /**
+   * What the declared type adds to a value nothing else is known about. A
+   * parameter typed with a class of an outside package (`client: Client` from
+   * `@temporalio/client`) is an instance of it wherever it comes from, so
+   * calls on it are calls into that package.
+   */
+  private typed(value: Value, type: ts.TypeNode, scope: Scope, depth = 0): Value {
+    const node = this.typeBody(type, scope.file, 0);
+    if (!node) return value;
+    if (ts.isTypeReferenceNode(node)) {
+      if (!isMissing(value) || !ts.isIdentifier(node.typeName)) return value;
+      const declaration = this.ws.resolveName(scope.file, node.typeName.text);
+      if (declaration?.kind !== 'external') return value;
+      return { k: 'member', of: UNKNOWN, name: node.typeName.text, spec: declaration.spec };
+    }
+    if (!ts.isTypeLiteralNode(node) || depth > 1) return value;
+    if (value.k !== 'obj' && !isMissing(value)) return value;
+    let props: Map<string, Thunk> | undefined;
+    for (const member of node.members) {
+      if (!ts.isPropertySignature(member) || !member.type) continue;
+      const name = propertyName(member.name);
+      const memberType = member.type;
+      // Only members that can turn out to be outside instances are worth wrapping.
+      if (name === undefined || this.typed(UNKNOWN, memberType, scope, depth + 1) === UNKNOWN) continue;
+      const current = value.k === 'obj' ? value.props.get(name) : undefined;
+      props ??= new Map(value.k === 'obj' ? value.props : []);
+      props.set(name, memo(() => this.typed(current ? current() : UNKNOWN, memberType, scope, depth + 1)));
+    }
+    if (!props) return value;
+    return value.k === 'obj' ? { ...value, props } : { k: 'obj', props, node, scope };
+  }
+
+  /** A type with its wrappers removed, following aliases declared in the same file. */
+  private typeBody(type: ts.TypeNode, file: string, depth: number): ts.TypeNode | undefined {
+    if (depth > 4) return undefined;
+    if (ts.isParenthesizedTypeNode(type)) return this.typeBody(type.type, file, depth + 1);
+    if (ts.isUnionTypeNode(type)) {
+      // `Client | undefined` is a Client that may be absent.
+      const present = type.types.filter(
+        (t) => t.kind !== ts.SyntaxKind.UndefinedKeyword && !(ts.isLiteralTypeNode(t) && t.literal.kind === ts.SyntaxKind.NullKeyword),
+      );
+      return present.length === 1 ? this.typeBody(present[0]!, file, depth + 1) : undefined;
+    }
+    if (ts.isTypeReferenceNode(type) && ts.isIdentifier(type.typeName)) {
+      const name = type.typeName.text;
+      const inner = type.typeArguments?.[0];
+      if ((name === 'Readonly' || name === 'Partial' || name === 'Required') && inner) return this.typeBody(inner, file, depth + 1);
+      const alias = this.ws
+        .file(file)
+        ?.source.statements.find((s): s is ts.TypeAliasDeclaration => ts.isTypeAliasDeclaration(s) && s.name.text === name);
+      return alias ? this.typeBody(alias.type, file, depth + 1) : type;
+    }
+    return type;
   }
 
   private bindPattern(name: ts.BindingName, value: Value, into: Map<string, Value>, scope: Scope) {
@@ -362,8 +428,11 @@ export class Evaluator {
       return value;
     }
     const declaration = this.ws.resolveName(scope.file, name);
-    if (!declaration) return { k: 'unknown', ...(at ? { node: at } : {}), scope };
-    return this.declared(declaration);
+    if (declaration) return this.declared(declaration);
+    // The one global that talks to the outside world.
+    if (name === 'fetch') return FETCH;
+    if (name === 'globalThis') return { k: 'ext', spec: 'globalThis', name: '' };
+    return { k: 'unknown', ...(at ? { node: at } : {}), scope };
   }
 
   private guard(node: ts.Node, compute: () => Value): Value {
@@ -467,6 +536,12 @@ export class Evaluator {
         return opaque ? this.platform(declaration) : ({ k: 'fn', node: declaration.node, scope } satisfies Value);
       if (declaration.kind === 'binding') return this.evalBinding(declaration.node, scope);
       const initializer = declaration.node.initializer;
+      const late =
+        (!initializer || isResetValue(unwrap(initializer))) && (declaration.node.parent.flags & ts.NodeFlags.Let) !== 0;
+      if (late && !opaque) {
+        const assigned = this.assignedLater(declaration.node, declaration.name);
+        if (assigned) return assigned;
+      }
       if (!initializer) return UNKNOWN;
       if (opaque && isFunctionLike(unwrap(initializer))) return this.platform(declaration);
       return this.eval(initializer, scope);
@@ -475,6 +550,45 @@ export class Evaluator {
     const tagged = value.k === 'unknown' || value.origin ? value : { ...value, origin };
     if (!this.busy.has(node)) this.declValues.set(node, tagged);
     return tagged;
+  }
+
+  /**
+   * A module-level `let` that a function fills in later. When the function
+   * assigns its own parameter (`export function bindStarter(start) { starter = start }`),
+   * the value is what that function is called with.
+   */
+  private assignedLater(declaration: ts.VariableDeclaration, name: string): Value | undefined {
+    const source = declaration.getSourceFile();
+    const assignment = findAssignment(source, name);
+    if (!assignment) return undefined;
+    let setter: ts.Node | undefined = assignment.parent;
+    while (setter && !isFunctionLike(setter)) setter = setter.parent;
+    const right = unwrap(assignment.right);
+    const index =
+      setter && isFunctionLike(setter) && ts.isIdentifier(right)
+        ? setter.parameters.findIndex((p) => ts.isIdentifier(p.name) && p.name.text === right.text)
+        : -1;
+    if (index < 0 || !setter || !ts.isFunctionDeclaration(setter) || !setter.name)
+      return this.eval(assignment.right, this.scopeAt(assignment));
+    const setterName = setter.name.text;
+    for (const file of this.sources()) {
+      const info = this.ws.file(file);
+      if (!info || !info.source.text.includes(`${setterName}(`)) continue;
+      let found: Value | undefined;
+      const visit = (node: ts.Node) => {
+        if (found) return;
+        if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === setterName) {
+          const target = this.ws.resolveName(file, setterName);
+          const argument = node.arguments[index];
+          if (target?.kind === 'function' && target.node === setter && argument && !ts.isSpreadElement(argument))
+            found = this.eval(argument, this.scopeAt(node));
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(info.source);
+      if (found && !isMissing(found)) return found;
+    }
+    return undefined;
   }
 
   /** A function declared outside the feature folders: known by name, never inlined. */
@@ -496,6 +610,7 @@ export class Evaluator {
         return declaration ? this.declared(declaration) : UNKNOWN;
       }
       case 'ext':
+        if (value.spec === 'globalThis' && !value.name && name === 'fetch') return FETCH;
         return { k: 'ext', spec: value.spec, name: value.name ? `${value.name}.${name}` : name };
       case 'call': {
         const config = value.args[0]?.();

@@ -1,0 +1,11 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/platform/*": ["./libs/platform/*/src/index.ts"],
+      "@/mail": ["./features/mail/src/index.ts"],
+      "@/mail/contracts": ["./features/mail/contracts/src/index.ts"],
+      "@/people/contracts": ["./features/people/contracts/src/index.ts"]
+    }
+  }
+}

@@ -58,7 +58,7 @@ const SYSTEM_NAMES: Record<string, string> = { zitadel: 'ZITADEL', openbao: 'Ope
 const systemFromFile = (file: string) => {
   const stem = basename(file)
     .replace(/\.(ts|mts)$/, '')
-    .replace(/[-.](client|api|sdk|adapter|provider|gateway|email|transport|storage)$/, '');
+    .replace(/[-.](client|api|sdk|adapter|provider|gateway|email|transport|storage|webhook\.handler|webhook|handler)$/, '');
   return SYSTEM_NAMES[stem] ?? capitalize(humanize(stem));
 };
 const EXTERNALS: ExternalRule[] = [
@@ -66,8 +66,8 @@ const EXTERNALS: ExternalRule[] = [
   { match: /@aws-sdk\/s3-request-presigner/, system: 'S3', direct: true },
   { match: /@aws-sdk\//, system: 'S3' },
   { match: /@grpc\//, system: systemFromFile },
-  { match: /@temporalio\//, system: 'Temporal' },
-  { match: /^node:https?$|^undici$|^axios$/, system: systemFromFile, direct: true },
+  { match: /@temporalio\/|platform\/temporal/, system: 'Temporal' },
+  { match: /^node:https?$|^undici$|^axios$|^fetch$/, system: systemFromFile, direct: true },
 ];
 
 const isCall = (value: Value | undefined, name: string): value is CallValue =>
@@ -142,7 +142,15 @@ export class YedaExtraction {
   private aggregates = new Map<string, AggregateDef>();
   private tables = new Map<string, TableDef>();
   private entities: { value: CallValue; domain: string }[] = [];
-  private features: { value: CallValue; domain: string }[] = [];
+  /** By definition site: a feature is one thing however many times it is reached. */
+  private features = new Map<string, { value: CallValue; domain: string }>();
+  private files: string[] = [];
+  /** Files the config adds to a domain: where a service composes what the features define. */
+  private composition = new Set<string>();
+  /** True while reading a composition file. */
+  private composing = false;
+  /** HTTP entry points outside the route registry, and the system their file is named after. */
+  private webhooks: { id: string; system: string; node: ts.Node }[] = [];
   private seen = new Set<string>();
   private handled = new Set<string>();
   readonly stats: ExtractStats = { files: 0, ms: 0, skipped: [] };
@@ -153,7 +161,7 @@ export class YedaExtraction {
   ) {
     this.roots = options.roots ?? options.config?.roots ?? ['features'];
     const inlinable = (file: string) => this.domainOf(file) !== undefined;
-    this.ev = new Evaluator(ws, inlinable, new Set(['defineVersioningTables']));
+    this.ev = new Evaluator(ws, inlinable, new Set(['defineVersioningTables']), () => this.files);
     this.types = new TypeReader(this.ev, (file) => this.domainOf(file) ?? 'platform');
     this.reach = new Reach(this.ev, { isTable: (v) => this.tableKey(v) !== undefined, externals: EXTERNALS });
   }
@@ -181,16 +189,17 @@ export class YedaExtraction {
     const folders = this.featureFolders();
     const skipClient = (rel: string) => /\/client(\/|$)/.test(rel);
     const extra = Object.values(this.options.config?.domains ?? {}).flatMap((d) => d.paths ?? []);
-    const files = [
-      ...folders.flatMap(({ root, folder }) => this.ws.listSources(`${root}/${folder}`, skipClient)),
-      ...extra.flatMap((path) => (/\.(ts|mts)$/.test(path) ? [this.ws.abs(path)] : this.ws.listSources(path, skipClient))),
-    ];
+    const composition = extra.flatMap((path) => (/\.(ts|mts)$/.test(path) ? [this.ws.abs(path)] : this.ws.listSources(path, skipClient)));
+    const files = [...folders.flatMap(({ root, folder }) => this.ws.listSources(`${root}/${folder}`, skipClient)), ...composition];
+    this.files = files;
+    this.composition = new Set(composition);
     this.stats.files = files.length;
 
     // 1. Definitions: every top-level value, and whatever it holds.
     for (const file of files) {
       const info = this.ws.file(file);
       if (!info) continue;
+      this.composing = this.composition.has(file);
       for (const declaration of info.locals.values()) {
         if (declaration.kind === 'class') continue;
         // A function is only worth evaluating when something calls it; its results surface there.
@@ -205,8 +214,14 @@ export class YedaExtraction {
     this.addProjections();
     for (const file of files) this.addStorages(file);
     // 3. Behaviour: handlers and background work.
-    for (const feature of this.features) this.addFeature(feature);
+    for (const feature of this.features.values()) this.addFeature(feature);
+    for (const file of composition) this.addActivities(file);
     this.addUnhandledRoutes();
+    // A webhook is called by the system its file is named after, when that system is on the map.
+    for (const { id, system, node } of this.webhooks) {
+      const caller = elementId(null, 'external', system.toLowerCase());
+      if (this.elements.has(caller)) this.link(caller, id, 'calls', node);
+    }
 
     const edges = [...this.edges.values()].filter((e) => this.elements.has(e.source) && this.elements.has(e.target));
     // A generated event that nothing appends and nothing consumes is only a definition.
@@ -295,9 +310,12 @@ export class YedaExtraction {
       case 'defineEntity':
         if (this.once(value, 'entity')) this.entities.push({ value, domain });
         break;
-      case 'defineFeature':
-        if (this.once(value, 'feature')) this.features.push({ value, domain });
+      case 'defineFeature': {
+        // The feature as a service composes it knows its dependencies; the bare definition does not.
+        const key = `${value.node.getSourceFile().fileName}:${value.node.pos}`;
+        if (!this.features.has(key) || this.composing) this.features.set(key, { value, domain });
         break;
+      }
       case 'defineLiveProjection':
         // Its sync route may be written inline.
         this.collect(prop(value.args[0]?.(), 'syncRoute') ?? { k: 'unknown' }, depth + 1);
@@ -845,7 +863,10 @@ export class YedaExtraction {
       if (part.name === 'withRoutes') for (const route of this.flatten(part.args[0]?.())) this.addHandler(route, domain);
       if (part.name === 'withStart') {
         const start = part.args[0]?.();
-        if (start?.k === 'fn') this.addWorkers(start, domain);
+        if (start?.k === 'fn') {
+          this.addWorkers(start, domain);
+          this.addWebhook(start, domain);
+        }
       }
     }
   }
@@ -1021,18 +1042,19 @@ export class YedaExtraction {
       const route = this.routeOf(value);
       if (route && route.domain !== domain) this.pendingCalls.push({ source: id, route, node });
     }
-    for (const [system, { node }] of facts.externals) {
-      const external = this.add({
-        id: elementId(null, 'external', system.toLowerCase()),
-        kind: 'external',
-        system: 'system',
-        domain: null,
-        name: system,
-        label: system,
-        evidence: this.ws.evidence(node),
-      });
-      this.link(id, external.id, 'calls', node);
-    }
+    for (const [system, { node }] of facts.externals) this.link(id, this.external(system, node).id, 'calls', node);
+  }
+
+  private external(system: string, node: ts.Node) {
+    return this.add({
+      id: elementId(null, 'external', system.toLowerCase()),
+      kind: 'external',
+      system: 'system',
+      domain: null,
+      name: system,
+      label: system,
+      evidence: this.ws.evidence(node),
+    });
   }
 
   // ---------------------------------------------------------------- workers
@@ -1072,6 +1094,82 @@ export class YedaExtraction {
       this.linkWrites(worker, facts);
       this.linkCalls(worker.id, domain, facts);
     }
+  }
+
+  /**
+   * `startTemporalWorker({ activities })` in a composition file: every activity
+   * a feature provides is a step that Temporal runs.
+   */
+  private addActivities(file: string) {
+    const source = this.ws.file(file)?.source;
+    if (!source || !source.text.includes('startTemporalWorker')) return;
+    walk(source, (node) => {
+      if (!ts.isCallExpression(node) || callName(node) !== 'startTemporalWorker' || !node.arguments[0]) return;
+      const activities = prop(this.ev.eval(node.arguments[0], this.ev.scopeAt(node)), 'activities');
+      if (activities?.k !== 'obj') return;
+      for (const [name, thunk] of activities.props) {
+        const fn = thunk();
+        if (fn.k !== 'fn' || !this.ev.canInline(fn)) continue;
+        const domain = this.domainOfNode(fn.node);
+        const facts = this.reach.analyze(fn);
+        const worker = this.add<WorkerElement>({
+          id: elementId(domain, 'worker', name),
+          kind: 'worker',
+          domain,
+          name,
+          label: humanize(name),
+          ...this.describeNode(fn.node),
+          evidence: this.ws.evidence(fn.node),
+          trigger: 'workflow',
+          appends: [],
+        });
+        this.linkWrites(worker, facts);
+        this.linkCalls(worker.id, domain, facts);
+        this.link(this.external('Temporal', node).id, worker.id, 'calls', node);
+      }
+    });
+  }
+
+  /**
+   * The middleware a start hook returns is an HTTP entry point outside the
+   * route registry. One that answers a fixed path and changes state is a
+   * command: in practice, a provider's webhook.
+   */
+  private addWebhook(start: FnValue, domain: string) {
+    const middleware = prop(this.ev.apply(start, []), 'middleware');
+    if (middleware?.k !== 'fn' || !this.ev.canInline(middleware)) return;
+    const scope = this.ev.bind(middleware, []);
+    let path: string | undefined;
+    let method: string | undefined;
+    walk(middleware.node, (node) => {
+      if (!ts.isBinaryExpression(node)) return;
+      for (const [side, other] of [[node.left, node.right], [node.right, node.left]] as const) {
+        if (!ts.isPropertyAccessExpression(side)) continue;
+        const value = this.ev.str(this.ev.eval(other, scope));
+        if (side.name.text === 'path' && value?.startsWith('/')) path ??= value;
+        if (side.name.text === 'method' && value && /^[A-Z]+$/.test(value)) method ??= value;
+      }
+    });
+    const facts = this.reach.analyze(middleware);
+    if (!path || !this.changesState(facts)) return;
+    const factory = enclosingFunction(middleware.node);
+    const stem = humanize((factory && fnName(factory)) ?? fnName(middleware.node) ?? 'webhook').replace(/ /g, '-');
+    const name = `${domain}.${stem}`;
+    const command = this.add<CommandElement>({
+      id: elementId(domain, 'command', name),
+      kind: 'command',
+      domain,
+      name,
+      label: stem,
+      ...this.describeNode(factory ?? middleware.node),
+      evidence: this.ws.evidence(factory ?? middleware.node),
+      http: { method: method ?? 'POST', path },
+      responses: [],
+      appends: [],
+    });
+    this.linkWrites(command, facts);
+    this.linkCalls(command.id, domain, facts);
+    this.webhooks.push({ id: command.id, system: systemFromFile(middleware.node.getSourceFile().fileName), node: middleware.node });
   }
 
   private addUnhandledRoutes() {

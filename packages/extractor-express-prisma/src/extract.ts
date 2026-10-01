@@ -56,7 +56,7 @@ const EXTERNALS: ExternalRule[] = [
   { match: /^@slack\//, system: 'Slack' },
   { match: /^twilio$/, system: 'Twilio' },
   { match: /^ioredis$|^redis$/, system: 'Redis' },
-  { match: /^axios$|^node:https?$|^undici$|^got$/, system: (file) => capitalize(humanize(basename(file).replace(/\.(ts|mts)$/, ''))), direct: true },
+  { match: /^axios$|^node:https?$|^undici$|^got$|^fetch$/, system: (file) => capitalize(humanize(basename(file).replace(/\.(ts|mts)$/, ''))), direct: true },
 ];
 
 type RouterRef = ts.Node;

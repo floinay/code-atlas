@@ -23,7 +23,8 @@ export function detectYeda(root: string): boolean {
 export function createYedaExtractor(root: string, config?: DomainsConfig): YedaExtractor {
   const workspace = new Workspace(root);
   return {
-    watch: ['features', 'libs/platform'],
+    // Paths the config adds to a domain are part of what is read, so they are followed too.
+    watch: [...new Set(['features', 'libs/platform', ...Object.values(config?.domains ?? {}).flatMap((d) => d.paths ?? [])])],
     extract() {
       const extraction = new YedaExtraction(workspace, config ? { config } : {});
       const model = extraction.run();

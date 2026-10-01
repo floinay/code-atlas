@@ -61,7 +61,7 @@ The schema is one file for the whole app, so a table goes to the module named af
 ### Limits
 
 - Raw SQL (`$queryRaw`, `$executeRaw`) is not read.
-- A global `fetch` to another service is not an external system yet.
+- A service reached with the global `fetch` is named after the file the call is written in.
 - Response types come from Prisma calls and object literals. A value that went through a mapper is `unknown`.
 - Controllers written as classes are not followed.
 

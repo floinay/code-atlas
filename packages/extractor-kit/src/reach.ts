@@ -215,7 +215,11 @@ class Run {
       this.enterFn(target, args, loop || isIntervalCall(node), stack, false, node);
       return;
     }
-    if ((name === 'invoke' || name === 'call') && node.arguments.length >= 1) {
+    // `router.invoke(Route, input)`, and any handle on the router that is called with a route by name:
+    // `routes(GetUserContact, { userId })`.
+    const first = node.arguments[0];
+    const opaqueCallee = !target || target.k === 'unknown' || target.k === 'member';
+    if (first && (name === 'invoke' || name === 'call' || (opaqueCallee && ts.isIdentifier(first)))) {
       const route = evalArg(0);
       if (route?.k === 'call' && route.name === 'defineRoute' && !this.facts.invokes.has(route)) this.facts.invokes.set(route, node);
     }
@@ -275,11 +279,19 @@ function isRawSqlWrite(node: ts.Identifier): boolean {
   return /\b(update|insert\s+into|delete\s+from)\s*$/i.test(before);
 }
 
-/** `api(path, body, 'PUT')`: an explicit HTTP verb among the arguments. */
+/** `api(path, body, 'PUT')` or `fetch(url, { method: 'PUT' })`: an explicit HTTP verb among the arguments. */
 function httpVerb(node: ts.Node): string | undefined {
   if (!ts.isCallExpression(node)) return undefined;
-  for (const argument of node.arguments)
-    if (ts.isStringLiteral(argument) && /^(GET|HEAD|POST|PUT|PATCH|DELETE)$/.test(argument.text)) return argument.text;
+  const verb = (value: ts.Node) =>
+    ts.isStringLiteral(value) && /^(GET|HEAD|POST|PUT|PATCH|DELETE)$/.test(value.text) ? value.text : undefined;
+  for (const argument of node.arguments) {
+    if (verb(argument)) return verb(argument);
+    // fetch(url, { method: 'POST', … })
+    if (ts.isObjectLiteralExpression(argument))
+      for (const property of argument.properties)
+        if (ts.isPropertyAssignment(property) && property.name.getText() === 'method' && verb(property.initializer))
+          return verb(property.initializer);
+  }
   return undefined;
 }
 

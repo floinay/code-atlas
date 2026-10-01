@@ -1,4 +1,4 @@
-import { buildView, collapseDomains, weight } from '@code-atlas/model';
+import { DomainsConfig, buildView, collapseDomains, weight } from '@code-atlas/model';
 import { describe, expect, it } from 'vitest';
 import { createYedaExtractor } from '../src/index.ts';
 import { reader, yedaRoot } from './helpers.ts';
@@ -275,5 +275,55 @@ describe.skipIf(!root)('Yeda: every feature', () => {
     for (const element of model.elements)
       if (element.kind === 'command' || element.kind === 'worker')
         for (const event of element.appends) expect(known.has(event), event).toBe(true);
+  });
+});
+
+/**
+ * `features/notifications` gets its recipient reader, its workflow engine and
+ * its mail provider from `apps/backend-service`. Adding those two files to the
+ * domain is what puts Temporal and Mailtrap on the map.
+ */
+describe.skipIf(!root)('Yeda: notifications as the backend service composes them', () => {
+  const config = DomainsConfig.parse({
+    domains: {
+      notifications: { paths: ['apps/backend-service/src/notifications.ts', 'apps/backend-service/src/main-runtime.ts'] },
+    },
+  });
+  const plain = root ? createYedaExtractor(root).extract().model : undefined!;
+  const model = root ? createYedaExtractor(root, config).extract().model : undefined!;
+  const r = model ? reader(model) : undefined!;
+
+  it('draws the provider webhook as a command even without the composition', () => {
+    const webhook = reader(plain).find('command', 'notifications.mailtrap-webhook');
+    expect(webhook.http).toEqual({ method: 'POST', path: '/api/notifications/providers/mailtrap' });
+    expect(plain.elements.some((e) => e.name === 'Temporal' || e.name === 'Mailtrap')).toBe(false);
+  });
+
+  it('starts workflows on Temporal from the outbox relay', () => {
+    expect(r.out(r.find('worker', 'startNotificationRelayLoop').id, 'calls')).toEqual(['Temporal']);
+  });
+
+  it('runs the activities as workflow steps that Temporal calls', () => {
+    const steps = model.elements.filter((e) => e.kind === 'worker' && e.trigger === 'workflow').map((e) => e.name).sort();
+    expect(steps).toEqual(['completeNotification', 'deliverNotificationChannel', 'prepareNotificationDeliveries']);
+    expect(r.out(r.find('external', 'Temporal').id, 'calls')).toEqual(steps);
+    expect(r.out(r.find('worker', 'deliverNotificationChannel').id, 'writes')).toEqual([
+      'notifications.in_app_notification', 'notifications.notification_delivery', 'notifications.notification_delivery_attempt',
+    ]);
+  });
+
+  it('sends mail through Mailtrap and hears back on the webhook', () => {
+    expect(r.into(r.find('external', 'Mailtrap').id, 'calls')).toEqual(['deliverNotificationChannel']);
+    expect(r.into(r.find('command', 'notifications.mailtrap-webhook').id, 'calls')).toEqual(['Mailtrap']);
+  });
+
+  it('reaches people and memberships through the contracts of auth and roles', () => {
+    expect(r.out(r.find('worker', 'prepareNotificationDeliveries').id, 'calls')).toEqual(['auth.user-contact']);
+    expect(r.out(r.find('command', 'notifications.send').id, 'calls')).toEqual(['roles.scope-membership']);
+  });
+
+  it('changes nothing outside notifications', () => {
+    const outside = (m: typeof model) => m.elements.filter((e) => e.domain !== 'notifications' && e.domain !== null).map((e) => e.id);
+    expect(outside(model)).toEqual(outside(plain));
   });
 });

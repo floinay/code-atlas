@@ -1,5 +1,22 @@
 # Changelog
 
+## Composition: Temporal and Mailtrap on the Yeda map
+
+- A domain's `paths` can name the files where a service composes the feature. The extractor then
+  reads the feature with its dependencies bound: a `defineFeature` reached from those files
+  replaces the bare one.
+- The evaluator follows a module-level `let` filled in by a setter to the call of that setter,
+  treats a parameter typed with a class of an outside package as an instance of it, and skips the
+  empty branch of `cond ? {} : { … }`.
+- `startTemporalWorker({ activities })` gives one worker per activity (trigger `workflow`), called
+  by Temporal. A handle on the router called with a route is a call to that route.
+- `fetch(url, { method })` is a call to a system named after the adapter file, in both adapters.
+- The middleware a start hook returns is a command when it answers a fixed path and changes state:
+  the Mailtrap webhook is on the map, and Mailtrap calls it.
+- With `apps/backend-service/src/notifications.ts` and `main-runtime.ts` added to `notifications`,
+  Yeda main shows Temporal, Mailtrap, three workflow steps and the calls to auth and roles.
+  Nothing outside notifications changes; a full extract still takes about half a second.
+
 ## Exploring domains, known findings, open in editor
 
 - Domains are collapsed and explored from the map: a control in each region's header, toggles in

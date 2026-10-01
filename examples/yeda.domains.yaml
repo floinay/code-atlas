@@ -1,0 +1,13 @@
+# A domains file for the Yeda monorepo, kept outside it:
+#
+#   pnpm atlas serve <yeda> --config examples/yeda.domains.yaml --state-dir ~/.code-atlas-yeda
+#
+# Copy it to <yeda>/.code-atlas/domains.yaml to drop the --config flag.
+domains:
+  notifications:
+    # Where the backend service composes the feature: the recipient reader,
+    # the workflow starter, the mail sender and the Temporal worker that runs
+    # its activities. With these the map shows Temporal and Mailtrap.
+    paths:
+      - apps/backend-service/src/notifications.ts
+      - apps/backend-service/src/main-runtime.ts

@@ -14,9 +14,11 @@ Three layers from `packages/extractor-kit`, each in one file, and the Yeda vocab
 2. **`evaluate.ts`** is a small symbolic evaluator. It does not run code. It follows a name to its
    value, inlines functions written under `features/`, substitutes their arguments and evaluates
    template literals, object spreads, `array.map(...)`, `Object.values(...)`, member access,
-   parameter defaults and `let` variables assigned later. A call to a platform function (anything
-   outside `features/`) stays an opaque *call value* that remembers its name and arguments.
-   Whatever it cannot follow becomes `unknown`.
+   parameter defaults and `let` variables assigned later, including a module-level `let` that a
+   setter fills in from somewhere else. A call to a platform function (anything outside
+   `features/`) stays an opaque *call value* that remembers its name and arguments. A parameter
+   nothing is known about, but typed with a class from an outside package, is an instance of that
+   class. Whatever it cannot follow becomes `unknown`.
 3. **`reach.ts`** walks a handler and everything it calls, with arguments bound. A closure that is
    declared but never called is not followed.
 
@@ -49,8 +51,11 @@ to a call on the value `createZitadelApi` returned.
 | `schema.table(name, columns, constraints)` | Table with columns, primary key and indexes. |
 | A function the start hook calls that changes state | Worker. See below. |
 | `listenEvents(...handlers, { projection })` in the start hook | Projection without an entity, with `handles` from the `on(...)` handlers and `writes` from what they reach. |
-| `invoke(Route)`, `context.call(Route)` to another feature | `calls` edge. |
+| `invoke(Route)`, `context.call(Route)`, or a handle on the router called with a route (`routes(GetUserContact, …)`), to another feature | `calls` edge. |
 | A call on a client from `@/platform/zitadel`, `@aws-sdk/*`, `@grpc/*`, `@temporalio/*`, `node:https` | `calls` edge to an external system. |
+| `fetch(url, { method })` | `calls` edge to a system named after the adapter file: `mailtrap-email.ts` → Mailtrap. |
+| The `middleware` a start hook returns, when it answers a fixed path and changes state | Command with that path: a provider's webhook. The system its file is named after calls it, when that system is on the map. |
+| `startTemporalWorker({ activities })` in a composition file | One worker per activity, with trigger `workflow`, and a `calls` edge from Temporal to each. |
 
 ### Workers
 
@@ -64,6 +69,46 @@ that changes state: appends events, writes a table or writes to an external syst
 - A function whose name says `migrate` or `backfill` is a `migration` and is kept apart from the
   function that calls it, so `adoptOrganizations` does not own the slug backfill's events.
 - A method of an object a factory returned is named after both: `identitySync.step`.
+
+### Composition: what the service binds
+
+A feature can leave its dependencies open and let the service that hosts it bind them.
+`features/notifications` does: `apps/backend-service` gives it the recipient reader, the workflow
+starter and the mail sender, and registers its activities on the Temporal worker. Read alone, the
+feature accepts and stores notifications and reaches nothing outside.
+
+Adding the composing files to the domain makes the extractor read the feature as the service
+builds it:
+
+```yaml
+domains:
+  notifications:
+    paths:
+      - apps/backend-service/src/notifications.ts
+      - apps/backend-service/src/main-runtime.ts
+```
+
+- A `defineFeature` reached again from one of these files replaces the bare definition, so its
+  handlers and start hook are walked with the bound options.
+- `let starter; export function bindWorkflows(start) { starter = start }` is followed to the call
+  of `bindWorkflows(...)`, wherever in these files it is.
+- `createTemporalWorkflowStarter({ client })` declares `client: Client` from `@temporalio/client`;
+  the value comes from a callback nothing is known about, and the type is enough to tell that
+  `client.workflow.start(...)` talks to Temporal.
+- `...(email === undefined ? {} : { sendEmail: email.sendEmail })`: the empty branch says nothing,
+  so the other one is taken.
+
+On Yeda main this adds Temporal and Mailtrap, three workflow steps, the relay's call to Temporal,
+the calls to `auth.user-contact` and `roles.scope-membership`, and the edge from Mailtrap to its
+webhook. Nothing outside notifications changes. The files are watched like the feature folders.
+
+The repository may not be yours to write to. `--config` reads the domains file from anywhere, and
+`--state-dir` keeps the layout out of the repository. `examples/yeda.domains.yaml` is this
+configuration, ready to pass:
+
+```bash
+pnpm atlas serve ../Yeda1Monorepo --config examples/yeda.domains.yaml --state-dir ~/.code-atlas-yeda
+```
 
 ### The versioning platform
 
@@ -98,12 +143,15 @@ domains:
     name: Organizations
     description: Creation, lifecycle and ZITADEL sync of organizations.
   notifications:
-    paths: [apps/backend-service/src/notifications.ts]   # extra files of this domain
+    paths:                                               # extra files or folders of this domain
+      - apps/backend-service/src/notifications.ts
+      - apps/backend-service/src/main-runtime.ts
   test-orchestration:
     ignore: true
   legacy-billing:
     mergeInto: billing
 checks:
+  mode: new                                     # or all; see docs/cli.md
   ignore: [auth.user-authentication-observed]   # known and intended
 ```
 
@@ -125,13 +173,19 @@ a type under the same name, identical definitions share the name and different o
 - External writes are a judgement from names and verbs, as described above.
 - The versioning platform is modelled by hand. A change to its method names needs a change here.
 - Work wired up outside the feature folders (Temporal activities and the Mailtrap client in
-  `apps/backend-service`) is not seen unless those paths are added to a domain in the config.
-- Koa middleware returned from a start hook (webhooks, file delivery) is not on the map.
+  `apps/backend-service`) is not seen unless those files are added to a domain in the config.
+- A workflow itself is not an element: its activities are, and Temporal calls each of them. The
+  order the workflow runs them in is not drawn.
+- Middleware that does not compare the request path with a constant, or changes nothing, is not on
+  the map (file delivery, for one).
+- A system reached with `fetch` is named after the file the call is written in.
 
 ## Tests
 
 - `test/mini.test.ts` runs on `test/fixtures/mini`, a tiny repository in the same DSL. It is
   self-contained and always runs.
+- `test/composed.test.ts` runs on `test/fixtures/composed`: a feature read alone, and read as the
+  service composes it.
 - `test/yeda.test.ts` runs on the real monorepo: organizations and tags in detail, then every feature. Set
   `YEDA_PATH` or write the path into `.yeda-path` at the repository root. Without it the suite
   skips.
