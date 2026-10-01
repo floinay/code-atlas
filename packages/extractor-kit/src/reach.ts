@@ -17,8 +17,11 @@ export type Facts = {
   externals: Map<string, { node: ts.Node; write: boolean }>;
   /** Permissions checked in code. */
   permissions: Map<Value, ts.Node>;
-  /** Calls on opaque platform values, for adapters that model them (versioning storage). */
-  opaque: { value: Value; method: string; node: ts.Node }[];
+  /**
+   * Method calls on values the walk cannot look into, for adapters that know
+   * what they mean: a versioning storage, a Prisma client, an Express response.
+   */
+  opaque: { value: Value; method: string; node: ts.CallExpression; scope: Scope }[];
   /** `listenEvents(...)` consumers started here. */
   listeners: CallValue[];
   /** A service loop or interval runs inside. */
@@ -218,7 +221,7 @@ class Run {
     }
     if (target) {
       this.external(target, node, stack, false);
-      if (target.k === 'member') this.facts.opaque.push({ value: target.of, method: target.name, node });
+      if (target.k === 'member') this.facts.opaque.push({ value: target.of, method: target.name, node, scope });
       // Calling the result of a platform helper, such as eventDispatcher(handlers),
       // runs the functions that were handed to it.
       if (target.k === 'call') this.enterHeld(target, loop, stack, 0);

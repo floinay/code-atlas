@@ -25,12 +25,25 @@ import {
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import ts from 'typescript';
-import { capitalize, humanize } from './ast.ts';
-import { callName, walk } from './ast.ts';
-import { Evaluator, type CallValue, type FnNode, type FnValue, type Value } from './evaluate.ts';
-import { Reach, enclosingFunction, fnName, type Entry, type ExternalRule, type Facts } from './reach.ts';
-import { TypeReader } from './types.ts';
-import type { Workspace } from './workspace.ts';
+import {
+  Evaluator,
+  Reach,
+  TypeReader,
+  callName,
+  capitalize,
+  enclosingFunction,
+  fnName,
+  humanize,
+  walk,
+  type CallValue,
+  type Entry,
+  type ExternalRule,
+  type Facts,
+  type FnNode,
+  type FnValue,
+  type Value,
+  type Workspace,
+} from '@code-atlas/extractor-kit';
 
 export type ExtractOptions = {
   /** Folders that hold one domain per sub-folder. Default: `features`. */

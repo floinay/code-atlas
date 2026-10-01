@@ -1,5 +1,22 @@
 # Changelog
 
+## Milestone 5: a second adapter, for Express + Prisma
+
+- `packages/extractor-kit`: the workspace, evaluator, reachability walk and Zod reader moved out of
+  the Yeda adapter, so adapters share them.
+- `packages/extractor-express-prisma`: Express routers (nested mounts, `route()` chains, guards),
+  Prisma models as tables, Prisma calls as reads and writes (including `include` and nested
+  writes), Zod bodies as input, responses typed from Prisma, cron jobs as workers, library clients
+  as external systems.
+- `examples/express-prisma`: Taskboard, a CRUD app with four domains. Its map is
+  `command → table → query`; the aggregate, event and projection lanes stay empty.
+- The CLI picks the adapter by looking at the repository.
+- Layout: the number of region columns now follows the shape of the map, so four small domains
+  stack in one column and thirteen large ones spread over four.
+- `serve` ignores duplicate file events, and ignore rules no longer look at where the repository
+  itself lives.
+- Workers can carry a schedule. Links to collapsed domains show how many elements they stand for.
+
 ## Milestone 4: serve, watch, live updates, stable layout
 
 - `code-atlas serve <repo>`: extracts, serves the built web app, watches files with chokidar,

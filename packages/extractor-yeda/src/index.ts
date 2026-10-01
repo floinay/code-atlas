@@ -2,7 +2,7 @@ import type { DomainsConfig, Model } from '@code-atlas/model';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { YedaExtraction, type ExtractStats } from './extract.ts';
-import { Workspace } from './workspace.ts';
+import { Workspace } from '@code-atlas/extractor-kit';
 
 export const ADAPTER = 'yeda';
 

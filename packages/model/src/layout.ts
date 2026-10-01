@@ -48,7 +48,6 @@ export function heightOf(node: ViewNode): number {
 const widthOf = (node: ViewNode) =>
   node.kind === 'external' ? G.externalWidth : node.kind === 'table' ? G.tableWidth : G.nodeWidth;
 
-const columnsFor = (domains: number) => (domains <= 3 ? 1 : domains <= 8 ? 2 : 3);
 const columnX = (column: number) => column * (REGION_WIDTH + G.regionGapX) - G.pad;
 
 /**
@@ -60,7 +59,7 @@ const columnX = (column: number) => column * (REGION_WIDTH + G.regionGapX) - G.p
 export function computeLayout(view: View, domains: Domain[], previous?: Layout): Layout {
   const next: Layout = {
     version: 1,
-    columns: previous?.columns ?? columnsFor(domains.length),
+    columns: previous?.columns ?? chooseColumns(view, domains),
     regions: {},
     nodes: {},
   };
@@ -162,6 +161,44 @@ export function computeLayout(view: View, domains: Domain[], previous?: Layout):
 
   placeExternals(view, next, previous);
   return next;
+}
+
+/** The height a region needs: its tallest lane plus the header. */
+function regionHeight(view: View, domain: string): number {
+  const lanes = LANES.map(() => 0);
+  const counts = LANES.map(() => 0);
+  for (const node of view.nodes) {
+    if (node.domain !== domain || laneOf(node) < 0) continue;
+    lanes[laneOf(node)]! += heightOf(node);
+    counts[laneOf(node)]!++;
+  }
+  const tallest = Math.max(G.nodeHeight, ...lanes.map((h, i) => h + Math.max(0, counts[i]! - 1) * G.gap));
+  return G.head + tallest + G.pad;
+}
+
+/**
+ * Regions are wide, so a few small domains read best stacked in one column
+ * and many tall ones need several. Picks the column count whose overall shape
+ * is closest to a screen.
+ */
+function chooseColumns(view: View, domains: Domain[]): number {
+  const heights = domains.map((d) => regionHeight(view, d.id));
+  let best = 1;
+  let bestScore = Infinity;
+  for (let columns = 1; columns <= Math.min(4, Math.max(1, domains.length)); columns++) {
+    const stacks = Array.from({ length: columns }, () => 0);
+    for (const h of heights) {
+      const shortest = stacks.indexOf(Math.min(...stacks));
+      stacks[shortest] = stacks[shortest]! + h + (stacks[shortest] ? G.regionGapY : 0);
+    }
+    const width = columns * REGION_WIDTH + (columns - 1) * G.regionGapX;
+    const score = Math.abs(Math.log(width / Math.max(...stacks) / 1.6));
+    if (score < bestScore) {
+      best = columns;
+      bestScore = score;
+    }
+  }
+  return best;
 }
 
 /** External systems sit left of the map, collapsed domains right of it. */

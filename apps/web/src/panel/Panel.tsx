@@ -33,28 +33,34 @@ function Section({ title, className, children }: { title: ReactNode; className?:
   );
 }
 
-function Link({ node, onGo }: { node: ViewNode; onGo(id: string): void }) {
+function Link({ node, edge, onGo }: { node: ViewNode; edge?: ViewEdge; onGo(id: string): void }) {
+  // A collapsed domain stands for several things: say how many, and name them on hover.
+  const count = edge?.count && edge.count > 1 ? edge.count : undefined;
   return (
-    <button className="lnk" style={kindVar(node.kind)} onClick={() => onGo(node.id)}>
+    <button className="lnk" style={kindVar(node.kind)} title={edge?.label} onClick={() => onGo(node.id)}>
       <svg viewBox="0 0 16 16" style={{ fill: 'none', stroke: 'var(--k)', strokeWidth: 1.8, strokeLinecap: 'round', strokeLinejoin: 'round' }}>
         {ICON_PATHS[node.kind]}
       </svg>
       {node.label}
       {node.members.length > 1 ? <i>×{node.members.length}</i> : null}
+      {count ? <i>· {count}</i> : null}
     </button>
   );
 }
 
-function Relation({ title, ids, view, onGo }: { title: string; ids: string[]; view: View; onGo(id: string): void }) {
+type RelationProps = { title: string; ids: string[]; view: View; edges?: ViewEdge[]; onGo(id: string): void };
+
+function Relation({ title, ids, view, edges, onGo }: RelationProps) {
   const unique = [...new Set(ids)].map((id) => view.byId.get(id)).filter((n): n is ViewNode => !!n);
   if (!unique.length) return null;
   return (
     <div className="relg">
       <small>{title}</small>
       <div>
-        {unique.map((n) => (
-          <Link key={n.id} node={n} onGo={onGo} />
-        ))}
+        {unique.map((n) => {
+          const edge = edges?.find((e) => e.source === n.id || e.target === n.id);
+          return <Link key={n.id} node={n} {...(edge ? { edge } : {})} onGo={onGo} />;
+        })}
       </div>
     </div>
   );
@@ -101,7 +107,17 @@ export function Panel({ node, view, model, onClose, onGo }: Props) {
   if ((isRoute(e) || e.kind === 'subscription') && e.permission)
     facts.push([t.permission, <span className="perm">{e.permission}</span>]);
   if (e.kind === 'subscription' && e.path) facts.push([t.call, <code>GET {e.path}</code>]);
-  if (e.kind === 'worker') facts.push([t.trigger, TRIGGER[e.trigger]]);
+  if (e.kind === 'worker')
+    facts.push([
+      t.trigger,
+      e.schedule ? (
+        <>
+          {TRIGGER[e.trigger]} · <code>{e.schedule}</code>
+        </>
+      ) : (
+        TRIGGER[e.trigger]
+      ),
+    ]);
   if (e.kind === 'aggregate' && e.storage)
     facts.push([
       t.storage,
@@ -301,7 +317,7 @@ export function Panel({ node, view, model, onClose, onGo }: Props) {
         {e.kind === 'projection' ? (
           <Section title={t.dataFlow}>
             <div className="rels">
-              <Relation title={t.listens} ids={incoming.filter((x) => x.kind === 'handles').map((x) => x.source)} view={view} onGo={onGo} />
+              <Relation title={t.listens} ids={incoming.filter((x) => x.kind === 'handles').map((x) => x.source)} view={view} edges={incoming} onGo={onGo} />
               <Relation title={t.writes} ids={out.filter((x) => x.kind === 'writes').map((x) => x.target)} view={view} onGo={onGo} />
               <Relation title={t.streamsTo} ids={out.filter((x) => x.kind === 'streams').map((x) => x.target)} view={view} onGo={onGo} />
               <Relation title={t.readBy} ids={out.filter((x) => x.kind === 'reads').map((x) => x.target)} view={view} onGo={onGo} />
@@ -313,10 +329,10 @@ export function Panel({ node, view, model, onClose, onGo }: Props) {
               <div className="rels">
                 <Relation title={t.appends} ids={view.appends.get(node.id) ?? []} view={view} onGo={onGo} />
                 {groupBy(incoming, (x) => x.source).map(([kind, ids]) => (
-                  <Relation key={`in-${kind}`} title={REL_IN[kind as keyof typeof REL_IN]} ids={ids} view={view} onGo={onGo} />
+                  <Relation key={`in-${kind}`} title={REL_IN[kind as keyof typeof REL_IN]} ids={ids} view={view} edges={incoming.filter((x) => x.kind === kind)} onGo={onGo} />
                 ))}
                 {groupBy(out, (x) => x.target).map(([kind, ids]) => (
-                  <Relation key={`out-${kind}`} title={REL_OUT[kind as keyof typeof REL_OUT]} ids={ids} view={view} onGo={onGo} />
+                  <Relation key={`out-${kind}`} title={REL_OUT[kind as keyof typeof REL_OUT]} ids={ids} view={view} edges={out.filter((x) => x.kind === kind)} onGo={onGo} />
                 ))}
               </div>
             </Section>

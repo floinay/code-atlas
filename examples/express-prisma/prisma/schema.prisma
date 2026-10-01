@@ -1,0 +1,100 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  admin
+  member
+}
+
+enum TaskStatus {
+  todo
+  doing
+  done
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  role      Role     @default(member)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  memberships ProjectMember[]
+  tasks       Task[]          @relation("assignee")
+  comments    Comment[]
+
+  @@map("users")
+}
+
+model Project {
+  id         String    @id @default(cuid())
+  name       String
+  slug       String    @unique
+  archivedAt DateTime? @map("archived_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  members ProjectMember[]
+  tasks   Task[]
+
+  @@map("projects")
+}
+
+model ProjectMember {
+  projectId String   @map("project_id")
+  userId    String   @map("user_id")
+  joinedAt  DateTime @default(now()) @map("joined_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, userId])
+  @@map("project_members")
+}
+
+model Task {
+  id         String     @id @default(cuid())
+  projectId  String     @map("project_id")
+  assigneeId String?    @map("assignee_id")
+  title      String
+  status     TaskStatus @default(todo)
+  dueAt      DateTime?  @map("due_at")
+  updatedAt  DateTime   @updatedAt @map("updated_at")
+
+  project  Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignee User?     @relation("assignee", fields: [assigneeId], references: [id])
+  comments Comment[]
+
+  @@index([projectId, status])
+  @@map("tasks")
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  taskId    String   @map("task_id")
+  authorId  String   @map("author_id")
+  body      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  task   Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author User @relation(fields: [authorId], references: [id])
+
+  @@index([taskId])
+  @@map("comments")
+}
+
+model AuditLog {
+  id      String   @id @default(cuid())
+  actorId String?  @map("actor_id")
+  action  String
+  subject String
+  at      DateTime @default(now())
+
+  @@index([subject])
+  @@map("audit_log")
+}

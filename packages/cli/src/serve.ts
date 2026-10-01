@@ -169,6 +169,16 @@ export async function serve(options: ServeOptions): Promise<AtlasServer> {
   const pending = new Set<string>();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let configChanged = false;
+  // File systems report one save more than once. A file that looks the same as last time did not change.
+  const stamps = new Map<string, string>();
+  const stampOf = (path: string) => {
+    try {
+      const stat = statSync(path);
+      return `${stat.mtimeMs}:${stat.size}`;
+    } catch {
+      return 'gone';
+    }
+  };
 
   const update = () => {
     timer = undefined;
@@ -220,8 +230,11 @@ export async function serve(options: ServeOptions): Promise<AtlasServer> {
   });
   watcher.on('all', (_event, path) => {
     const rel = relative(root, path).split(sep).join('/');
+    if (rel !== DOMAINS_FILE && !/\.(ts|mts|tsx|prisma|md)$/.test(rel)) return;
+    const stamp = stampOf(path);
+    if (stamps.get(rel) === stamp) return;
+    stamps.set(rel, stamp);
     if (rel === DOMAINS_FILE) configChanged = true;
-    else if (!/\.(ts|mts|tsx|prisma|md)$/.test(rel)) return;
     pending.add(rel);
     if (timer) clearTimeout(timer);
     timer = setTimeout(update, options.debounce ?? 120);

@@ -60,6 +60,9 @@ importers:
 
   packages/cli:
     dependencies:
+      '@code-atlas/extractor-express-prisma':
+        specifier: workspace:*
+        version: link:../extractor-express-prisma
       '@code-atlas/extractor-yeda':
         specifier: workspace:*
         version: link:../extractor-yeda
@@ -83,8 +86,32 @@ importers:
         specifier: ^8.0.0
         version: 8.18.2
 
+  packages/extractor-express-prisma:
+    dependencies:
+      '@code-atlas/extractor-kit':
+        specifier: workspace:*
+        version: link:../extractor-kit
+      '@code-atlas/model':
+        specifier: workspace:*
+        version: link:../model
+      typescript:
+        specifier: ~6.0.3
+        version: 6.0.3
+
+  packages/extractor-kit:
+    dependencies:
+      '@code-atlas/model':
+        specifier: workspace:*
+        version: link:../model
+      typescript:
+        specifier: ~6.0.3
+        version: 6.0.3
+
   packages/extractor-yeda:
     dependencies:
+      '@code-atlas/extractor-kit':
+        specifier: workspace:*
+        version: link:../extractor-kit
       '@code-atlas/model':
         specifier: workspace:*
         version: link:../model

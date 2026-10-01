@@ -1,0 +1,13 @@
+{
+  "name": "@code-atlas/extractor-express-prisma",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc --noEmit -p tsconfig.json" },
+  "dependencies": {
+    "@code-atlas/extractor-kit": "workspace:*",
+    "@code-atlas/model": "workspace:*",
+    "typescript": "~6.0.3"
+  }
+}

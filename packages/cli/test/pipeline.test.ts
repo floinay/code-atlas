@@ -82,3 +82,18 @@ describe('loadDomainsConfig', () => {
     );
   });
 });
+
+describe('the second adapter', () => {
+  const taskboard = fileURLToPath(new URL('../../../examples/express-prisma', import.meta.url));
+
+  it('is picked for an Express + Prisma app and runs through the same pipeline', () => {
+    const adapter = pickAdapter(taskboard);
+    expect(adapter.name).toBe('express-prisma');
+    const config = DomainsConfig.parse({});
+    const model = runExtraction(taskboard, adapter.create(taskboard, config), config, { explore: ['tasks'] }).model;
+    expect(model.domains.map((d) => d.id)).toEqual(['tasks']);
+    // Neighbouring modules collapse into blocks, exactly as Yeda features do.
+    const blocks = model.elements.filter((e) => e.kind === 'external' && e.system === 'domain').map((e) => e.name);
+    expect(blocks.sort()).toEqual(['Projects', 'Users']);
+  });
+});

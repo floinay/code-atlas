@@ -109,6 +109,8 @@ export const WorkerElement = z.strictObject({
   ...base,
   kind: z.literal('worker'),
   trigger: z.enum(['loop', 'startup', 'migration', 'schedule', 'event']),
+  /** A cron expression or an interval, when the trigger is a schedule. */
+  schedule: z.string().optional(),
   appends: z.array(z.string()).default([]),
 });
 export const AggregateElement = z.strictObject({

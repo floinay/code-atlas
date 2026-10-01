@@ -3,9 +3,7 @@
  *   pnpm tsx packages/extractor-yeda/scripts/facts.ts <repo> <route name>
  */
 import { YedaExtraction } from '../src/extract.ts';
-import type { Facts } from '../src/reach.ts';
-import type { Value } from '../src/evaluate.ts';
-import { Workspace } from '../src/workspace.ts';
+import { Workspace, type Facts, type Value } from '@code-atlas/extractor-kit';
 
 const [root, ...names] = process.argv.slice(2);
 if (!root || !names.length) throw new Error('usage: facts.ts <repo> <route name>...');

@@ -44,6 +44,13 @@ function client(url: string) {
           resolve(message);
         });
       }),
+    /** The next model update, skipping feed-only messages. */
+    async nextModel() {
+      for (;;) {
+        const message = await this.next();
+        if (message.type === 'model') return message;
+      }
+    },
     close: () => socket.close(),
   };
 }
@@ -129,8 +136,7 @@ describe('serve', () => {
           "export const OrderDelivered = defineEvent({ ...identity, name: 'orders.delivered', payload: byId });\nexport const orderEvents = [OrderDelivered, ",
         ),
     );
-    const update = await socket.next();
-    if (update.type !== 'model') throw new Error(`expected a model update, got ${update.type}`);
+    const update = await socket.nextModel();
     const added = 'orders:event:orders.delivered';
     expect(update.diff.addedElements).toEqual([added]);
     expect(update.diff.addedEdges).toEqual([`orders:aggregate:Order|emits|${added}`]);
@@ -154,8 +160,7 @@ describe('serve', () => {
         .replace('OrderCancelled, OrderPlaced,', 'OrderCancelled, OrderDelivered, OrderPlaced,')
         .replace('events: [OrderPlaced,', 'events: [OrderDelivered, OrderPlaced,'),
     );
-    const fixed = await socket.next();
-    if (fixed.type !== 'model') throw new Error(`expected a model update, got ${fixed.type}`);
+    const fixed = await socket.nextModel();
     expect(fixed.model.checks.map((c) => c.id)).not.toContain(`unhandled-event:${added}`);
     expect(fixed.diff.addedEdges).toEqual([`${added}|handles|billing:projection:billing.invoices`]);
     expect(fixed.feed[0]).toMatchObject({ kind: 'add', subject: { type: 'edge', source: 'delivered', target: 'Invoices' } });

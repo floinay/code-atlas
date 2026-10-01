@@ -10,7 +10,7 @@ Adapters produce it, the CLI serves it, the web app draws it.
 | `command` | A route that changes state. | HTTP, permission, input, responses per status, error codes, **the events it appends**. |
 | `query` | A route that only loads and reads. | HTTP, permission, input, responses, error codes. |
 | `subscription` | A live stream to clients. | Row type, path, permission. |
-| `worker` | A background loop, startup task or migration. | Trigger, the events it appends. |
+| `worker` | A background loop, startup task, migration or scheduled job. | Trigger, schedule, the events it appends. |
 | `aggregate` | State decided by commands. | State type, storage. |
 | `event` | A fact an aggregate emits. | Payload, schema version. |
 | `projection` | A read model built from events. | Entity: name, permissions, row type, consumer. |
@@ -74,5 +74,8 @@ The first layout packs each lane and centres it in its region. After that the la
   otherwise below the last node;
 - a region grows downwards and only pushes the regions below it when it outgrows the gap;
 - a new domain goes to the shortest column.
+
+The number of columns is chosen once, from the shape of the map: the count whose overall width
+and height come closest to a screen.
 
 The layout is persisted to `.code-atlas/layout.json` in the mapped repository.

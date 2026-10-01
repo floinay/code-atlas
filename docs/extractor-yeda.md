@@ -6,15 +6,17 @@ about 450 files takes roughly half a second.
 
 ## How it reads code
 
-Three layers, each in one file.
+Three layers from `packages/extractor-kit`, each in one file, and the Yeda vocabulary on top in
+`packages/extractor-yeda/src/extract.ts`.
 
 1. **`workspace.ts`** parses files on demand and resolves names: local declarations, imports,
    re-exports (`export *`, `export { a as b } from`) and the `paths` in `tsconfig.base.json`.
 2. **`evaluate.ts`** is a small symbolic evaluator. It does not run code. It follows a name to its
    value, inlines functions written under `features/`, substitutes their arguments and evaluates
-   template literals, object spreads, `array.map(...)`, `Object.values(...)` and member access.
-   A call to a platform function (anything outside `features/`) stays an opaque *call value* that
-   remembers its name and arguments. Whatever it cannot follow becomes `unknown`.
+   template literals, object spreads, `array.map(...)`, `Object.values(...)`, member access,
+   parameter defaults and `let` variables assigned later. A call to a platform function (anything
+   outside `features/`) stays an opaque *call value* that remembers its name and arguments.
+   Whatever it cannot follow becomes `unknown`.
 3. **`reach.ts`** walks a handler and everything it calls, with arguments bound. A closure that is
    declared but never called is not followed.
 
@@ -107,7 +109,7 @@ checks:
 
 ## Types
 
-`types.ts` turns evaluated Zod schemas into fields. A top-level schema with a capitalised name
+`types.ts` in the kit turns evaluated Zod schemas into fields. A top-level schema with a capitalised name
 that is not a scalar becomes a named type. Scalars (`OrganizationId = z.string().min(1).max(200)`)
 are inlined with their constraints as a note. `X.extend({...})` shows as `…X` plus the new fields.
 `pick`, `omit`, `partial`, `X.shape.field` and `Route.input` are resolved. When two features export

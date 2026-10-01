@@ -1,3 +1,4 @@
+import { createExpressPrismaExtractor, detectExpressPrisma } from '@code-atlas/extractor-express-prisma';
 import { createYedaExtractor, detectYeda } from '@code-atlas/extractor-yeda';
 import type { DomainsConfig, Model } from '@code-atlas/model';
 
@@ -17,6 +18,11 @@ type Adapter = {
 
 export const ADAPTERS: Adapter[] = [
   { name: 'yeda', detect: detectYeda, create: (root, config) => createYedaExtractor(root, config) },
+  {
+    name: 'express-prisma',
+    detect: detectExpressPrisma,
+    create: (root, config) => createExpressPrismaExtractor(root, config),
+  },
 ];
 
 export function pickAdapter(root: string, name?: string): Adapter {
