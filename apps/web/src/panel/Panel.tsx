@@ -9,7 +9,7 @@ import {
   type ViewEdge,
   type ViewNode,
 } from '@code-atlas/model';
-import type { CSSProperties, ReactNode } from 'react';
+import { useState, type CSSProperties, type ReactNode } from 'react';
 import { ICON_PATHS, KindIcon } from '../icons.tsx';
 import { CHAIN_ORDER, KINDS, REL_IN, REL_OUT, TRIGGER, count, t } from '../i18n.ts';
 import { TypeBox, type Types } from './TypeView.tsx';
@@ -88,6 +88,21 @@ function Chain({ ids, view }: { ids: Set<string>; view: View }) {
   );
 }
 
+/** Contract descriptions written for agents run long: show the start, open on click. */
+function Description({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const long = text.length > 260;
+  if (!long) return <p>{text}</p>;
+  return (
+    <p className={open ? 'desc' : 'desc clamp'}>
+      {text}{' '}
+      <button className="more" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
+        {open ? t.less : t.more}
+      </button>
+    </p>
+  );
+}
+
 const httpText = (e: RouteElement) => (e.http ? `${e.http.method} ${e.http.path}` : t.internalContract);
 const isRoute = (e: Element): e is RouteElement => e.kind === 'command' || e.kind === 'query';
 const real = (edges: ViewEdge[] | undefined) => (edges ?? []).filter((e) => !e.ghost);
@@ -160,7 +175,7 @@ export function Panel({ node, view, model, onClose, onGo }: Props) {
             {t.checkMessage(check.detail.event, check.detail.aggregate, check.detail.consumers, check.detail.handledSiblings)}
           </div>
         ))}
-        {description && <p>{description}</p>}
+        {description && <Description key={node.id} text={description} />}
         {facts.length > 0 && (
           <dl className="facts">
             {facts.map(([name, value], i) => (

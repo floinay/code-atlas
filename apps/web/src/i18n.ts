@@ -103,6 +103,8 @@ export const t = {
   feed: 'Живі оновлення',
   clearNew: 'Зняти позначки',
   close: 'Закрити',
+  more: 'далі',
+  less: 'згорнути',
   live: 'живе',
   offline: 'немає зв’язку',
   demo: 'демо',
