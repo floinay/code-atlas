@@ -10,7 +10,7 @@ Adapters produce it, the CLI serves it, the web app draws it.
 | `command` | A route that changes state. | HTTP, permission, input, responses per status, error codes, **the events it appends**. |
 | `query` | A route that only loads and reads. | HTTP, permission, input, responses, error codes. |
 | `subscription` | A live stream to clients. | Row type, path, permission. |
-| `worker` | A background loop, startup task, migration or scheduled job. | Trigger, schedule, the events it appends. |
+| `worker` | A background loop, startup task, migration, scheduled job or workflow step. | Trigger, schedule, the events it appends. |
 | `aggregate` | State decided by commands. | State type, storage. |
 | `event` | A fact an aggregate emits. | Payload, schema version. |
 | `projection` | A read model built from events. | Entity: name, permissions, row type, consumer. |
@@ -61,7 +61,12 @@ These live in `packages/model` and have no I/O, so the CLI and the browser share
 - `computeLayout(view, domains, previous?)`: see below.
 - `runChecks(model)`: an event is flagged when some consumer handles every other event of its
   aggregate (at least two) but not this one.
-- `collapseDomains(model, explore)`: folds unexplored domains into blocks with counted edges.
+- `applyBaseline(checks, baseline)` and `pruneBaseline(checks, baseline)`: mark the findings that
+  are already known, and forget the ones that were fixed.
+- `collapseDomains(model, explore)`: folds unexplored domains into blocks with counted edges, and
+  lists them in `model.collapsed`.
+- `project(full, explore, state)`: the map for one selection of explored domains. It collapses,
+  builds the view and computes the layout from the saved state.
 - `diffModels(previous, next)`: added, removed and changed elements and edges. Evidence line shifts
   alone are not a change.
 
@@ -78,4 +83,25 @@ The first layout packs each lane and centres it in its region. After that the la
 The number of columns is chosen once, from the shape of the map: the count whose overall width
 and height come closest to a screen.
 
-The layout is persisted to `.code-atlas/layout.json` in the mapped repository.
+## Views
+
+A selection of explored domains is a view, and every view has its own layout. Thirteen regions in
+four columns and two regions side by side cannot share positions: a region is about 2300 units
+wide, so two domains kept at their places in the full map could end up a screen apart.
+
+- A view keeps its layout, so the rules above hold inside it and returning to a view shows it as
+  it was left.
+- A view opened for the first time is packed afresh. Its regions are laid out inside as they are
+  in the views that already show them, so a node sits at the same place in its domain everywhere.
+- The twelve most recently used views are kept.
+
+The saved state (`AtlasState`, in `.code-atlas/layout.json`):
+
+```ts
+{
+  version: 2,
+  explore?: string[],             // chosen in the browser; [] means "all, on purpose"
+  views: Record<string, Layout>,  // key: "*" or the sorted ids, least recently used first
+  baseline?: string[],            // known findings, as "event>consumer"
+}
+```

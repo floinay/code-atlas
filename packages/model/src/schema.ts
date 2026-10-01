@@ -108,7 +108,8 @@ export const QueryElement = z.strictObject({ ...route, kind: z.literal('query') 
 export const WorkerElement = z.strictObject({
   ...base,
   kind: z.literal('worker'),
-  trigger: z.enum(['loop', 'startup', 'migration', 'schedule', 'event']),
+  /** `workflow`: a step that a workflow engine runs, such as a Temporal activity. */
+  trigger: z.enum(['loop', 'startup', 'migration', 'schedule', 'event', 'workflow']),
   /** A cron expression or an interval, when the trigger is a schedule. */
   schedule: z.string().optional(),
   appends: z.array(z.string()).default([]),
@@ -236,6 +237,11 @@ export const Check = z.strictObject({
     consumers: z.array(z.string()),
     handledSiblings: z.int(),
   }),
+  /**
+   * The finding was there before watching began, or was accepted since. It is
+   * still listed, but drawn quietly: no ghost edge and no line in the feed.
+   */
+  known: z.boolean().default(false),
 });
 export type Check = z.infer<typeof Check>;
 
@@ -246,7 +252,10 @@ export const Model = z.strictObject({
     branch: z.string().optional(),
     adapter: z.string().optional(),
   }),
+  /** Domains drawn in full. */
   domains: z.array(Domain),
+  /** Domains folded away: into a block when something explored touches them, otherwise off the map. */
+  collapsed: z.array(Domain).default([]),
   elements: z.array(Element),
   edges: z.array(Edge),
   types: z.record(z.string(), NamedType).default({}),
@@ -296,6 +305,11 @@ export const DomainsConfig = z.strictObject({
     .strictObject({
       /** Events that are known to be unhandled on purpose, by name (`auth.user-deleted`) or id. */
       ignore: z.array(z.string()).default([]),
+      /**
+       * `new` (the default) raises only findings that appear after the first
+       * run; what was already there is kept as known. `all` raises everything.
+       */
+      mode: z.enum(['new', 'all']).default('new'),
     })
     .optional(),
 });

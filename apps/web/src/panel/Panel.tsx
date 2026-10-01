@@ -1,4 +1,5 @@
 import {
+  domainBlockId,
   impact,
   weight,
   type Element,
@@ -10,7 +11,7 @@ import {
   type ViewNode,
 } from '@code-atlas/model';
 import { useState, type CSSProperties, type ReactNode } from 'react';
-import { ICON_PATHS, KindIcon } from '../icons.tsx';
+import { ActionIcon, ICON_PATHS, KindIcon } from '../icons.tsx';
 import { CHAIN_ORDER, KINDS, REL_IN, REL_OUT, TRIGGER, count, t } from '../i18n.ts';
 import { TypeBox, type Types } from './TypeView.tsx';
 
@@ -20,6 +21,15 @@ type Props = {
   model: Model;
   onClose(): void;
   onGo(id: string): void;
+  /** Domains that can be explored from here. */
+  explorable: Set<string>;
+  onExplore(domain: string): void;
+  onOnly(domain: string): void;
+  /** Whether findings can be accepted as known. */
+  baseline: boolean;
+  onMarkCheck(id: string, known: boolean): void;
+  /** Opens a file in the editor; absent when there is no server to do it. */
+  onOpenFile?: (file: string, line?: number) => Promise<string | undefined>;
 };
 
 const kindVar = (kind: ElementKind) => ({ '--k': `var(--${kind})` }) as CSSProperties;
@@ -103,12 +113,55 @@ function Description({ text }: { text: string }) {
   );
 }
 
+/** Where an element is written: opens in the editor, and copies as `path:line` for a prompt. */
+function Source({ file, line, onOpen }: { file: string; line?: number; onOpen?: Props['onOpenFile'] }) {
+  const [note, setNote] = useState<{ text: string; bad?: boolean } | null>(null);
+  const place = line ? `${file}:${line}` : file;
+  const say = (text: string, bad = false) => {
+    setNote({ text, ...(bad ? { bad } : {}) });
+    setTimeout(() => setNote((current) => (current?.text === text ? null : current)), bad ? 6000 : 1800);
+  };
+  const copy = () =>
+    navigator.clipboard.writeText(place).then(
+      () => say(t.copied),
+      () => say(t.openFailed('clipboard'), true),
+    );
+  const open = async () => {
+    const error = await onOpen!(file, line);
+    say(error ? t.openFailed(error) : t.opened, !!error);
+  };
+  return (
+    <div className="srcrow">
+      {onOpen ? (
+        <button className="file" title={t.openInEditor} onClick={() => void open()}>
+          <code>{place}</code>
+          <ActionIcon name="open" size={13} />
+        </button>
+      ) : (
+        <code>{place}</code>
+      )}
+      <button className="copy" aria-label={t.copyPath} title={t.copyPath} onClick={() => void copy()}>
+        <ActionIcon name="copy" size={13} />
+      </button>
+      {note && (
+        <small className={note.bad ? 'bad' : undefined} role="status">
+          {note.text}
+        </small>
+      )}
+    </div>
+  );
+}
+
 const httpText = (e: RouteElement) => (e.http ? `${e.http.method} ${e.http.path}` : t.internalContract);
 const isRoute = (e: Element): e is RouteElement => e.kind === 'command' || e.kind === 'query';
 const real = (edges: ViewEdge[] | undefined) => (edges ?? []).filter((e) => !e.ghost);
 
-export function Panel({ node, view, model, onClose, onGo }: Props) {
+export function Panel(props: Props) {
+  const { node, view, model, onClose, onGo } = props;
   const e = node.element;
+  // A block stands for a collapsed domain; with its code at hand it can be opened.
+  const folded = e.kind === 'external' && e.system === 'domain' ? model.collapsed.find((d) => domainBlockId(d.id) === e.id) : undefined;
+  const canExplore = !!folded && props.explorable.has(folded.id);
   const types: Types = model.types;
   const bundled = node.members.length > 1;
   const { up, down } = impact(view, node.id);
@@ -161,7 +214,7 @@ export function Panel({ node, view, model, onClose, onGo }: Props) {
       <div className="ph">
         <span className="kindlabel">
           <KindIcon kind={node.kind} />
-          {KINDS[node.kind].label} <small>· {domain}</small>
+          {folded ? t.domain : KINDS[node.kind].label} <small>· {folded ? t.collapsed : domain}</small>
         </span>
         <button className="close" aria-label={t.close} onClick={onClose}>
           ×
@@ -170,12 +223,30 @@ export function Panel({ node, view, model, onClose, onGo }: Props) {
       </div>
       <div className="pb">
         {checks.map((check) => (
-          <div className="warnbox" key={check.id}>
-            <b>{t.checkTitle}</b>{' '}
+          <div className={check.known ? 'warnbox known' : 'warnbox'} key={check.id}>
+            <b>{check.known ? t.checkKnownTitle : t.checkTitle}</b>{' '}
             {t.checkMessage(check.detail.event, check.detail.aggregate, check.detail.consumers, check.detail.handledSiblings)}
+            {props.baseline && (
+              <button title={check.known ? undefined : t.checkAcceptHint} onClick={() => props.onMarkCheck(check.id, !check.known)}>
+                {check.known ? t.checkRaise : t.checkAccept}
+              </button>
+            )}
           </div>
         ))}
         {description && <Description key={node.id} text={description} />}
+        {folded && canExplore && (
+          <div className="actions">
+            <button className="primary" onClick={() => props.onExplore(folded.id)}>
+              <ActionIcon name="expand" />
+              {t.expand}
+            </button>
+            <button className="quiet" onClick={() => props.onOnly(folded.id)}>
+              <ActionIcon name="only" />
+              {t.onlyThis}
+            </button>
+          </div>
+        )}
+        {folded && <p className="empty">{t.blockHint}</p>}
         {facts.length > 0 && (
           <dl className="facts">
             {facts.map(([name, value], i) => (
@@ -364,14 +435,20 @@ export function Panel({ node, view, model, onClose, onGo }: Props) {
           </Section>
         )}
         <Section title={t.code} className="src">
-          {node.members.map((m) => (
-            <div key={m.id}>
-              <code>
-                {m.evidence.file}
-                {m.kind !== 'external' ? `:${m.evidence.line}` : ''}
-              </code>
-            </div>
-          ))}
+          {node.members.map((m) =>
+            folded ? (
+              <div className="srcrow" key={m.id}>
+                <code>{m.evidence.file}</code>
+              </div>
+            ) : (
+              <Source
+                key={m.id}
+                file={m.evidence.file}
+                {...(m.kind !== 'external' ? { line: m.evidence.line } : {})}
+                {...(props.onOpenFile ? { onOpen: props.onOpenFile } : {})}
+              />
+            ),
+          )}
         </Section>
       </div>
     </aside>

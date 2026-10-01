@@ -21,6 +21,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from 'react';
+import { ACTION_PATHS } from '../icons.tsx';
 import { KIND_ORDER, LANE_TITLES, count, t } from '../i18n.ts';
 import { bounds, centreOn, edgePath, fit, zoomAt, type Bounds, type Camera } from './camera.ts';
 import { farLabels, resetMeasurements, zoomFor, type Zoom } from './labels.ts';
@@ -45,6 +46,11 @@ type Props = {
   /** Width covered by the detail panel, so "centre" means the visible centre. */
   inset: number;
   onSelect(id: string | null): void;
+  /** Domains that carry a "collapse" control in their header. */
+  collapsible: Set<string>;
+  onCollapse(domain: string): void;
+  /** A double click on a node: a collapsed domain opens. */
+  onOpen(id: string): void;
   /** Overlays that live on the stage: zoom buttons, the feed, the detail panel. */
   children?: ReactNode;
 };
@@ -56,7 +62,7 @@ const reducedMotion = () =>
   typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(props, ref) {
-  const { view, layout, domains, hiddenKinds, newNodes, newEdges, selected, inset, onSelect, children } = props;
+  const { view, layout, domains, hiddenKinds, newNodes, newEdges, selected, inset, onSelect, collapsible, onCollapse, onOpen, children } = props;
   const stage = useRef<HTMLDivElement>(null);
   const svg = useRef<SVGSVGElement>(null);
   const world = useRef<SVGGElement>(null);
@@ -204,11 +210,13 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(props, ref
 
   // Pointer: pan with one pointer, pinch with two, click when it barely moved.
   const pointers = useRef(new Map<number, { x: number; y: number }>());
-  const pan = useRef<{ x: number; y: number; cx: number; cy: number; target: string | null } | null>(null);
+  const pan = useRef<{ x: number; y: number; cx: number; cy: number; target: string | null; collapse: string | null } | null>(null);
   const pinch = useRef<{ d: number; k: number } | null>(null);
   const moved = useRef(0);
   const nodeAt = (target: EventTarget | null) =>
     (target as Element | null)?.closest?.('.node')?.getAttribute('data-id') ?? null;
+  const collapseAt = (target: EventTarget | null) =>
+    (target as Element | null)?.closest?.('[data-collapse]')?.getAttribute('data-collapse') ?? null;
 
   const onPointerDown = (ev: React.PointerEvent<SVGSVGElement>) => {
     ev.currentTarget.setPointerCapture(ev.pointerId);
@@ -216,7 +224,14 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(props, ref
     pointers.current.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
     moved.current = 0;
     if (pointers.current.size === 1)
-      pan.current = { x: ev.clientX, y: ev.clientY, cx: cam.current.x, cy: cam.current.y, target: nodeAt(ev.target) };
+      pan.current = {
+        x: ev.clientX,
+        y: ev.clientY,
+        cx: cam.current.x,
+        cy: cam.current.y,
+        target: nodeAt(ev.target),
+        collapse: collapseAt(ev.target),
+      };
     if (pointers.current.size === 2) {
       const [a, b] = [...pointers.current.values()] as [{ x: number; y: number }, { x: number; y: number }];
       pinch.current = { d: Math.hypot(a.x - b.x, a.y - b.y), k: cam.current.k };
@@ -249,7 +264,10 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(props, ref
     if (pointers.current.size < 2) pinch.current = null;
     if (pointers.current.size === 0) {
       setPanning(false);
-      if (pan.current && moved.current <= 4) onSelect(pan.current.target);
+      if (pan.current && moved.current <= 4) {
+        if (pan.current.collapse) onCollapse(pan.current.collapse);
+        else onSelect(pan.current.target);
+      }
       pan.current = null;
     }
   };
@@ -275,6 +293,8 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(props, ref
     const overview = zoom.k < OVERVIEW_ZOOM;
     const titleSize = Math.min(64, 26 * Math.max(1, 0.75 / k));
     const laneSize = Math.min(30, 11 * Math.max(1, 0.8 / k));
+    // The control keeps a size that can be hit, like the title keeps one that can be read.
+    const controlScale = Math.min(2.6, Math.max(1, 0.7 / k));
     const x0 = r.x + GEOMETRY.pad;
     return [
       <g className="region" key={domain.id}>
@@ -283,6 +303,23 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(props, ref
           <text className="rtitle" x={r.x + 24} y={r.y + Math.max(40, titleSize * 0.9 + 6)} style={{ fontSize: titleSize }}>
             {domain.name}
           </text>
+        )}
+        {!overview && collapsible.has(domain.id) && (
+          <g
+            className="rfold"
+            transform={`translate(${r.x + r.w - 20},${r.y + 18}) scale(${controlScale})`}
+            data-collapse={domain.id}
+            role="button"
+            tabIndex={0}
+            aria-label={t.collapseDomain(domain.name)}
+          >
+            <title>{t.collapseDomain(domain.name)}</title>
+            <rect x={-118} width={118} height={30} rx={15} />
+            <g transform="translate(-106,7)">{ACTION_PATHS.collapse}</g>
+            <text x={-82} y={20}>
+              {t.collapse}
+            </text>
+          </g>
         )}
         <text className="rmeta" x={r.x + 24} y={r.y + 62}>
           {domain.path}
@@ -325,12 +362,18 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(props, ref
           setHovered((prev) => (prev === id ? prev : id));
         }}
         onPointerLeave={() => setHovered(null)}
-        onKeyDown={(ev) => {
+        onDoubleClick={(ev) => {
           const id = nodeAt(ev.target);
-          if (id && (ev.key === 'Enter' || ev.key === ' ')) {
-            ev.preventDefault();
-            onSelect(id);
-          }
+          if (id) onOpen(id);
+        }}
+        onKeyDown={(ev) => {
+          if (ev.key !== 'Enter' && ev.key !== ' ') return;
+          const collapse = collapseAt(ev.target);
+          const id = nodeAt(ev.target);
+          if (!collapse && !id) return;
+          ev.preventDefault();
+          if (collapse) onCollapse(collapse);
+          else onSelect(id);
         }}
         onFocus={(ev) => {
           const id = nodeAt(ev.target);

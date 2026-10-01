@@ -1,4 +1,4 @@
-import { GEOMETRY, laneX, type ElementKind } from '@code-atlas/model';
+import { GEOMETRY, domainBlockId, laneX, type ElementKind } from '@code-atlas/model';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Canvas, type CanvasHandle } from './canvas/Canvas.tsx';
 import { Feed } from './chrome/Feed.tsx';
@@ -7,7 +7,7 @@ import { Sidebar } from './chrome/Sidebar.tsx';
 import { demoIntro, demoReset, demoSteps, demoWarning } from './demo.ts';
 import { t } from './i18n.ts';
 import { Panel } from './panel/Panel.tsx';
-import { fixtureModel, useAtlas } from './state.ts';
+import { fixtureModel, openInEditor, useAtlas } from './state.ts';
 
 type Theme = 'dark' | 'light';
 const THEME_KEY = 'code-atlas.theme';
@@ -33,7 +33,7 @@ function useTheme() {
 }
 
 export function App() {
-  const { atlas, applyLocal, log, clearNew } = useAtlas();
+  const { atlas, applyLocal, explore, markCheck, log, clearNew } = useAtlas();
   const { model, view, layout } = atlas;
   const canvas = useRef<CanvasHandle>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -52,6 +52,33 @@ export function App() {
     else canvas.current?.fitAll(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [atlas.epoch]);
+
+  // Exploring or collapsing a domain moves regions: frame the one that was asked for, or everything.
+  useEffect(() => {
+    if (atlas.reframe.seq === 0) return;
+    const domain = atlas.reframe.domain;
+    if (domain && layout.regions[domain]) canvas.current?.fitDomain(domain);
+    else canvas.current?.fitAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [atlas.reframe.seq]);
+
+  const explored = model.domains.map((d) => d.id);
+  const exploreDomain = (id: string) => {
+    setSideOpen(false);
+    setSelected(null);
+    explore([...explored, id], id);
+  };
+  const collapseDomain = (id: string) => {
+    if (explored.length < 2) return;
+    setSelected((current) => (current && view.byId.get(current)?.domain === id ? null : current));
+    explore(explored.filter((other) => other !== id));
+  };
+  const onlyDomain = (id: string) => {
+    setSideOpen(false);
+    setSelected(null);
+    explore([id], id);
+  };
+  const collapsible = new Set(explored.length > 1 ? explored.filter((id) => atlas.explorable.has(id)) : []);
 
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
@@ -81,6 +108,9 @@ export function App() {
   const runDemo = async () => {
     setDemo('running');
     select(null);
+    // The story is told on the whole map.
+    explore(null);
+    await sleep(0);
     const base = fixtureModel();
     const region = layout.regions['tags'];
     if (region)
@@ -160,8 +190,14 @@ export function App() {
       <Sidebar
         view={view}
         domains={model.domains}
+        collapsed={model.collapsed}
+        explorable={atlas.explorable}
         hiddenKinds={hiddenKinds}
         open={sideOpen}
+        onExplore={exploreDomain}
+        onCollapse={collapseDomain}
+        onOnly={onlyDomain}
+        onAll={() => explore(null)}
         onToggleKind={(kind) =>
           setHiddenKinds((current) => {
             const next = new Set(current);
@@ -190,6 +226,12 @@ export function App() {
         selected={selected}
         inset={selectedNode && !narrow() ? 444 : 0}
         onSelect={select}
+        collapsible={collapsible}
+        onCollapse={collapseDomain}
+        onOpen={(id) => {
+          const folded = model.collapsed.find((d) => domainBlockId(d.id) === id);
+          if (folded && atlas.explorable.has(folded.id)) exploreDomain(folded.id);
+        }}
       >
         <div className="zoombar">
           <div className="zbtns">
@@ -205,7 +247,19 @@ export function App() {
           </div>
         </div>
         {selectedNode ? (
-          <Panel node={selectedNode} view={view} model={model} onClose={() => select(null)} onGo={(id) => go(id)} />
+          <Panel
+            node={selectedNode}
+            view={view}
+            model={model}
+            onClose={() => select(null)}
+            onGo={(id) => go(id)}
+            explorable={atlas.explorable}
+            onExplore={exploreDomain}
+            onOnly={onlyDomain}
+            baseline={atlas.baseline}
+            onMarkCheck={markCheck}
+            {...(atlas.mode === 'live' ? { onOpenFile: openInEditor } : {})}
+          />
         ) : (
           <Feed entries={atlas.feed} hasNew={atlas.newNodes.size > 0} onClearNew={() => clearNew()} />
         )}

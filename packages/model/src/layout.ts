@@ -55,8 +55,12 @@ const columnX = (column: number) => column * (REGION_WIDTH + G.regionGapX) - G.p
  * With one, existing nodes keep their place: a new node takes the next free
  * slot in its lane, and a region only moves when the one above outgrows the
  * space between them.
+ *
+ * `templates` are layouts of other views of the same model. A region that is
+ * new here but drawn there is laid out inside the same way, so a domain looks
+ * the same in every view even though it sits somewhere else.
  */
-export function computeLayout(view: View, domains: Domain[], previous?: Layout): Layout {
+export function computeLayout(view: View, domains: Domain[], previous?: Layout, templates: Layout[] = []): Layout {
   const next: Layout = {
     version: 1,
     columns: previous?.columns ?? chooseColumns(view, domains),
@@ -78,14 +82,35 @@ export function computeLayout(view: View, domains: Domain[], previous?: Layout):
   ];
   for (const domain of ordered) {
     const members = view.nodes.filter((n) => n.domain === domain.id && laneOf(n) >= 0);
-    const known = previous?.regions[domain.id];
+    let known = previous?.regions[domain.id];
+    let placed: Record<string, Box> | undefined = previous?.nodes;
+    let column = 0;
+    let x = 0;
+    let y = 0;
+    if (!known) {
+      for (let c = 1; c < next.columns; c++) if (columnBottom(c) < columnBottom(column)) column = c;
+      y = columnBottom(column) + G.regionGapY;
+      x = columnX(column);
+      const template = templates.find((t) => t.regions[domain.id]);
+      if (template) {
+        const source = template.regions[domain.id]!;
+        const dx = x - source.x;
+        const dy = y - source.y;
+        known = { ...source, x, y, column };
+        placed = {};
+        for (const node of members) {
+          const box = template.nodes[node.id];
+          if (box) placed[node.id] = { ...box, x: box.x + dx, y: box.y + dy };
+        }
+      }
+    }
     if (known) {
       const region = { ...known };
       next.regions[domain.id] = region;
       const lanes = LANES.map(() => [] as { node: ViewNode; box: Box }[]);
       const fresh: ViewNode[] = [];
       for (const node of members) {
-        const old = previous!.nodes[node.id];
+        const old = placed?.[node.id];
         if (!old) {
           fresh.push(node);
           continue;
@@ -105,12 +130,12 @@ export function computeLayout(view: View, domains: Domain[], previous?: Layout):
         const lane = lanes[laneOf(node)]!;
         const h = heightOf(node);
         // The next free slot: a hole left by a removed node, else below the last one.
-        let y = lane.length ? lane[0]!.box.y + lane[0]!.box.h + G.gap : region.y + G.head;
+        let slot = lane.length ? lane[0]!.box.y + lane[0]!.box.h + G.gap : region.y + G.head;
         for (const { box } of lane.slice(1)) {
-          if (box.y - y >= h + G.gap) break;
-          y = box.y + box.h + G.gap;
+          if (box.y - slot >= h + G.gap) break;
+          slot = box.y + box.h + G.gap;
         }
-        lane.push({ node, box: { x: laneX(laneOf(node)) + region.x + G.pad, y, w: widthOf(node), h } });
+        lane.push({ node, box: { x: laneX(laneOf(node)) + region.x + G.pad, y: slot, w: widthOf(node), h } });
         lane.sort((a, b) => a.box.y - b.box.y);
       }
       let bottom = region.y + G.head + G.nodeHeight;
@@ -121,10 +146,6 @@ export function computeLayout(view: View, domains: Domain[], previous?: Layout):
         }
       region.h = Math.max(region.h, bottom - region.y + G.pad);
     } else {
-      let column = 0;
-      for (let c = 1; c < next.columns; c++) if (columnBottom(c) < columnBottom(column)) column = c;
-      const y = columnBottom(column) + G.regionGapY;
-      const x = columnX(column);
       const lanes = LANES.map(() => [] as ViewNode[]);
       for (const node of members) lanes[laneOf(node)]!.push(node);
       const laneHeights = lanes.map(

@@ -54,3 +54,38 @@ export function KindIcon({ kind, size = 14 }: { kind: ElementKind; size?: number
     </svg>
   );
 }
+
+/** 16×16 stroke icons for actions. They take the text colour. */
+export const ACTION_PATHS = {
+  /** Two chevrons closing on each other: fold a domain into a block. */
+  collapse: <path d="M4 2.5 8 6l4-3.5M4 13.5 8 10l4 3.5" />,
+  /** Two chevrons moving apart: unfold a block into a domain. */
+  expand: <path d="M4 6.5 8 3l4 3.5M4 9.5 8 13l4-3.5" />,
+  only: (
+    <>
+      <circle cx="8" cy="8" r="5.6" />
+      <circle cx="8" cy="8" r="1.7" />
+    </>
+  ),
+  copy: (
+    <>
+      <rect x="5.5" y="5.5" width="8" height="8" rx="1.8" />
+      <path d="M10.5 3.2H4.3A1.3 1.3 0 0 0 3 4.5v6.2" />
+    </>
+  ),
+  open: <path d="M9 3h4v4M13 3 7.5 8.5M11 9.5V12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h2.5" />,
+} satisfies Record<string, ReactNode>;
+
+export function ActionIcon({ name, size = 14 }: { name: keyof typeof ACTION_PATHS; size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      style={{ fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round', flex: 'none' }}
+    >
+      {ACTION_PATHS[name]}
+    </svg>
+  );
+}

@@ -1,5 +1,23 @@
 # Changelog
 
+## Exploring domains, known findings, open in editor
+
+- Domains are collapsed and explored from the map: a control in each region's header, toggles in
+  the sidebar ("only this domain", "all"), buttons in the panel of a block, a double click on a
+  block. The choice is sent to the server, shared by every open tab and saved.
+- Each selection of explored domains is a view with its own remembered layout. A new view is
+  packed afresh, with every region laid out inside as it already is elsewhere.
+- Checks keep a baseline. The first `serve` records what is already wrong as known; only findings
+  that appear later are raised. Known ones stay as a grey badge and can be raised again; new ones
+  can be accepted. `checks.mode: all` turns this off.
+- File paths in the detail panel open the editor at the line (`--editor`, `$CODE_ATLAS_EDITOR`,
+  or the editor that is running), and a button copies `path:line`.
+- `--config` reads the domains file from outside the repository.
+- `serve` listens on `127.0.0.1` (`--host` changes it) and answers only requests made from its own
+  page, WebSocket included.
+- `layout.json` is now version 2: views, the explored domains, the baseline. A version 1 file is
+  read as the layout of the current view.
+
 ## Milestone 5: a second adapter, for Express + Prisma
 
 - `packages/extractor-kit`: the workspace, evaluator, reachability walk and Zod reader moved out of

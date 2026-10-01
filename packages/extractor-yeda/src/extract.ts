@@ -222,6 +222,7 @@ export class YedaExtraction {
       version: 1,
       repo: { name: basename(this.ws.root), adapter: 'yeda' },
       domains: [...new Map(domains.map((d) => [d.id, d])).values()],
+      collapsed: [],
       elements,
       edges: edges.filter((e) => this.elements.has(e.source) && this.elements.has(e.target)),
       checks: [],

@@ -9,16 +9,21 @@ import { runExtraction } from './pipeline.ts';
 const HELP = `code-atlas: a live map of a codebase's architecture
 
 Usage
-  code-atlas extract <repo> [--out model.json] [--only a,b] [--adapter name]
-  code-atlas serve <repo>   [--port 4400]      [--only a,b] [--adapter name] [--open] [--state-dir dir]
+  code-atlas extract <repo> [--out model.json] [--only a,b] [--adapter name] [--config file]
+  code-atlas serve <repo>   [--port 4400]      [--only a,b] [--adapter name] [--config file]
+                            [--state-dir dir]  [--editor command] [--host address] [--open]
 
 Options
-  --out      Where to write the model. Default: model.json. Use - for stdout.
-  --only     Draw only these domains in full; the rest collapse into blocks.
-  --adapter  Force an adapter instead of detecting one.
-  --port     Port for the web app and its WebSocket. Default: 4400.
-  --open     Open the browser once the server is up.
+  --out        Where to write the model. Default: model.json. Use - for stdout.
+  --only       Draw only these domains in full; the rest collapse into blocks.
+  --adapter    Force an adapter instead of detecting one.
+  --config     The domains file. Default: <repo>/.code-atlas/domains.yaml.
+  --port       Port for the web app and its WebSocket. Default: 4400.
+  --host       Interface to listen on. Default: 127.0.0.1, this machine only.
   --state-dir  Where serve keeps layout.json. Default: <repo>/.code-atlas.
+  --editor     Command that opens a file from the map, such as "code" or "zed".
+               Default: $CODE_ATLAS_EDITOR, else the editor that is running.
+  --open       Open the browser once the server is up.
 `;
 
 export async function main(argv: string[]): Promise<void> {
@@ -39,6 +44,9 @@ async function run(argv: string[]) {
       only: { type: 'string' },
       adapter: { type: 'string' },
       port: { type: 'string' },
+      host: { type: 'string' },
+      config: { type: 'string' },
+      editor: { type: 'string' },
       open: { type: 'boolean' },
       'state-dir': { type: 'string' },
       help: { type: 'boolean', short: 'h' },
@@ -54,7 +62,8 @@ async function run(argv: string[]) {
   const root = resolve(repo);
   if (!existsSync(root) || !statSync(root).isDirectory()) throw new Error(`${root} is not a directory.`);
 
-  const config = loadDomainsConfig(root);
+  const configFile = values.config ? resolve(values.config) : undefined;
+  const config = loadDomainsConfig(root, configFile);
   const adapter = pickAdapter(root, values.adapter);
   const explore = values.only?.split(',').map((s) => s.trim()).filter(Boolean);
   const options = explore ? { explore } : {};
@@ -85,6 +94,9 @@ async function run(argv: string[]) {
     port,
     open: values.open ?? false,
     ...(values['state-dir'] ? { stateDir: resolve(values['state-dir']) } : {}),
+    ...(configFile ? { configFile } : {}),
+    ...(values.host ? { host: values.host } : {}),
+    ...(values.editor ? { editor: values.editor } : {}),
     ...options,
   });
 }

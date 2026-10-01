@@ -7,6 +7,7 @@ export type ModelDiff = {
   changedElements: string[];
   addedEdges: string[];
   removedEdges: string[];
+  /** Findings that are new and not in the baseline. */
   addedChecks: string[];
 };
 
@@ -19,7 +20,8 @@ export function diffModels(previous: Model | undefined, next: Model): ModelDiff 
   const after = new Map(next.elements.map((e) => [e.id, fingerprint(e)]));
   const edgesBefore = new Set((previous?.edges ?? []).map(edgeKey));
   const edgesAfter = new Set(next.edges.map(edgeKey));
-  const checksBefore = new Set((previous?.checks ?? []).map((c) => c.id));
+  const raised = (model: Model | undefined) => (model?.checks ?? []).filter((c) => !c.known).map((c) => c.id);
+  const checksBefore = new Set(raised(previous));
   return {
     addedElements: [...after.keys()].filter((id) => !before.has(id)),
     removedElements: [...before.keys()].filter((id) => !after.has(id)),
@@ -28,7 +30,7 @@ export function diffModels(previous: Model | undefined, next: Model): ModelDiff 
     ),
     addedEdges: [...edgesAfter].filter((key) => !edgesBefore.has(key)),
     removedEdges: [...edgesBefore].filter((key) => !edgesAfter.has(key)),
-    addedChecks: next.checks.map((c) => c.id).filter((id) => !checksBefore.has(id)),
+    addedChecks: raised(next).filter((id) => !checksBefore.has(id)),
   };
 }
 

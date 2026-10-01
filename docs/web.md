@@ -27,10 +27,39 @@ React and Vite. The canvas is hand-written SVG.
 - A first word shared with lane siblings is dropped: `OrganizationSync` → `…Sync`.
 - Dotted and snake_case names differ at the end, so they keep their tail.
 
+## Exploring and collapsing domains
+
+A large repository is easier to read a few domains at a time. Any domain can be folded into a
+block that keeps only its connections to what is still drawn, and unfolded again:
+
+- on the map: the "Згорнути" control in a region's header; a double click on a block opens it;
+- in the sidebar: every domain keeps its row, drawn in full or not. The row of a collapsed domain
+  opens it. The icons collapse, expand, or leave only that domain. "Усі" brings everything back;
+- in the detail panel of a block: "Розгорнути" and "Лише цей домен".
+
+The last domain cannot be collapsed. After a change the camera frames the domain that was asked
+for, or the whole map. Each selection has its own remembered layout, so going back to a view
+shows it as it was left.
+
+## Findings
+
+A node with a new finding has an amber badge and a dashed edge to what it should be connected to.
+A known finding has a grey badge and no edge. The panel says which consumer forgot which event and
+lets you accept the finding or raise it again.
+
+## Source
+
+The panel ends with where the element is written. With a server behind the page the path is a
+button that opens the editor at that line; next to it is a button that copies `path:line`.
+
 ## Data
 
 On load the app asks `/api/health`. With a server it opens a WebSocket at `/ws` and draws what it
 receives. Without one it runs in demo mode on the bundled fixture, and the demo button replays an
 agent adding a feature through the same update path.
+
+Without a server the browser does what the server would: it keeps the full model, collapses
+domains with the same `project` function, holds the layouts of the views it has shown and its own
+baseline of findings. Nothing is saved, and there is no editor to open.
 
 UI text is Ukrainian and lives in `src/i18n.ts`.

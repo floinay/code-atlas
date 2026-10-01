@@ -25,9 +25,18 @@ export type ServerMessage =
       type: 'model';
       model: Model;
       layout: Layout;
-      /** Empty on the first message. */
+      /** Empty on the first message, and when only the view or the baseline changed. */
       diff: ModelDiff;
       feed: FeedEntry[];
+      /** Whether findings can be accepted as known: false when `checks.mode` is `all`. */
+      baseline: boolean;
     }
   /** Files changed and the map did not, or the extraction failed: only the feed moves. */
   | { type: 'feed'; feed: FeedEntry[] };
+
+/** Browser → server, over the same WebSocket. */
+export type ClientMessage =
+  /** Draw only these domains in full; `null` draws all of them. */
+  | { type: 'explore'; domains: string[] | null }
+  /** Accept a finding as known, or raise it again. */
+  | { type: 'check'; id: string; known: boolean };

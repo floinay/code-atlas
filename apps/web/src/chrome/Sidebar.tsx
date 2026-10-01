@@ -1,15 +1,24 @@
-import { weight, type Domain, type ElementKind, type View } from '@code-atlas/model';
-import { KindIcon } from '../icons.tsx';
+import { domainBlockId, weight, type Domain, type ElementKind, type View } from '@code-atlas/model';
+import { ActionIcon, KindIcon } from '../icons.tsx';
 import { KINDS, KIND_ORDER, t } from '../i18n.ts';
 
 type Props = {
   view: View;
+  /** Domains drawn in full. */
   domains: Domain[];
+  /** Domains folded away. */
+  collapsed: Domain[];
+  /** Domains that can be explored and collapsed from here. */
+  explorable: Set<string>;
   hiddenKinds: Set<ElementKind>;
   open: boolean;
   onToggleKind(kind: ElementKind): void;
   onDomain(id: string): void;
   onExternal(id: string): void;
+  onExplore(id: string): void;
+  onCollapse(id: string): void;
+  onOnly(id: string): void;
+  onAll(): void;
 };
 
 const Line = ({ dash, width = 1.6, round }: { dash?: string; width?: number; round?: boolean }) => (
@@ -25,10 +34,15 @@ const Line = ({ dash, width = 1.6, round }: { dash?: string; width?: number; rou
   </svg>
 );
 
-export function Sidebar({ view, domains, hiddenKinds, open, onToggleKind, onDomain, onExternal }: Props) {
+export function Sidebar(props: Props) {
+  const { view, domains, collapsed, explorable, hiddenKinds, open, onToggleKind, onDomain, onExternal } = props;
   const total = (kind: ElementKind) =>
     view.nodes.filter((n) => n.kind === kind).reduce((sum, n) => sum + weight(n), 0);
-  const externals = view.nodes.filter((n) => n.kind === 'external');
+  const explored = new Set(domains.map((d) => d.id));
+  // One list in one order, so a domain keeps its row whether it is drawn in full or not.
+  const all = [...domains, ...collapsed].sort((a, b) => a.id.localeCompare(b.id));
+  const blocks = new Set(collapsed.map((d) => domainBlockId(d.id)));
+  const externals = view.nodes.filter((n) => n.kind === 'external' && !blocks.has(n.id));
   return (
     <aside className={`side${open ? ' open' : ''}`}>
       <section>
@@ -52,24 +66,59 @@ export function Sidebar({ view, domains, hiddenKinds, open, onToggleKind, onDoma
         </div>
       </section>
       <section>
-        <h3>{t.domains}</h3>
+        <h3>
+          {t.domains}
+          {collapsed.length > 0 && (
+            <span className="count">
+              {t.exploredOf(domains.length, all.length)}
+              {collapsed.some((d) => explorable.has(d.id)) && <button onClick={props.onAll}>{t.allDomains}</button>}
+            </span>
+          )}
+        </h3>
         <div className="doms">
-          {domains.map((domain) => (
-            <button key={domain.id} className="dom" onClick={() => onDomain(domain.id)}>
-              <span>{domain.name}</span>
-              <small>{domain.path}</small>
-            </button>
-          ))}
+          {all.map((domain) => {
+            const full = explored.has(domain.id);
+            const can = explorable.has(domain.id);
+            return (
+              <div key={domain.id} className={`dom${full ? '' : ' folded'}`}>
+                <button
+                  className="go"
+                  onClick={() => (full ? onDomain(domain.id) : can ? props.onExplore(domain.id) : onExternal(domainBlockId(domain.id)))}
+                  title={full || !can ? undefined : t.expandDomain(domain.name)}
+                >
+                  <span>{domain.name}</span>
+                  <small>{full ? domain.path : t.collapsed}</small>
+                </button>
+                {can && (domains.length > 1 || !full) && (
+                  <button className="act only" aria-label={t.onlyDomain(domain.name)} title={t.onlyThis} onClick={() => props.onOnly(domain.id)}>
+                    <ActionIcon name="only" />
+                  </button>
+                )}
+                {can && full && domains.length > 1 && (
+                  <button className="act" aria-label={t.collapseDomain(domain.name)} title={t.collapse} onClick={() => props.onCollapse(domain.id)}>
+                    <ActionIcon name="collapse" />
+                  </button>
+                )}
+                {can && !full && (
+                  <button className="act" aria-label={t.expandDomain(domain.name)} title={t.expand} onClick={() => props.onExplore(domain.id)}>
+                    <ActionIcon name="expand" />
+                  </button>
+                )}
+              </div>
+            );
+          })}
           {externals.map((node) => (
-            <button key={node.id} className="dom" onClick={() => onExternal(node.id)}>
-              <span>{node.label}</span>
-              <small>
-                {(node.element.kind === 'external' && node.element.system === 'domain'
-                  ? t.collapsedDomain
-                  : t.externalSystem
-                ).toLowerCase()}
-              </small>
-            </button>
+            <div key={node.id} className="dom">
+              <button className="go" onClick={() => onExternal(node.id)}>
+                <span>{node.label}</span>
+                <small>
+                  {(node.element.kind === 'external' && node.element.system === 'domain'
+                    ? t.collapsedDomain
+                    : t.externalSystem
+                  ).toLowerCase()}
+                </small>
+              </button>
+            </div>
           ))}
         </div>
       </section>

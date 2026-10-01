@@ -151,6 +151,7 @@ export class ExpressPrismaExtraction {
       version: 1,
       repo: { name: this.repoName(), adapter: 'express-prisma' },
       domains,
+      collapsed: [],
       elements,
       edges: [...this.edges.values()].filter((e) => this.elements.has(e.source) && this.elements.has(e.target)),
       checks: [],

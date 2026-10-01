@@ -1,6 +1,21 @@
 import { elementId, type Edge, type Element, type Model } from './schema.ts';
 import { edgeKey } from './view.ts';
 
+/** The block that stands for a collapsed domain. */
+export const domainBlockId = (domain: string) => elementId(null, 'external', `domain.${domain}`);
+
+/**
+ * Which domains to draw in full, cleaned up: unknown ids are dropped, the
+ * order follows the model, and "every domain" or "none" both mean no
+ * selection at all.
+ */
+export function normalizeExplore(explore: readonly string[] | null | undefined, domains: readonly { id: string }[]): string[] | undefined {
+  if (!explore) return undefined;
+  const wanted = new Set(explore);
+  const kept = domains.map((d) => d.id).filter((id) => wanted.has(id));
+  return kept.length === 0 || kept.length === domains.length ? undefined : kept;
+}
+
 /**
  * Keeps the listed domains in full and folds every other domain that touches
  * them into one collapsed block. Edges into a block are merged and counted,
@@ -11,7 +26,7 @@ export function collapseDomains(model: Model, explore: string[]): Model {
   if (model.domains.every((d) => explored.has(d.id))) return model;
   const byId = new Map(model.elements.map((e) => [e.id, e]));
   const kept = (e: Element | undefined) => !!e && (e.domain === null || explored.has(e.domain));
-  const blockId = (domain: string) => elementId(null, 'external', `domain.${domain}`);
+  const blockId = domainBlockId;
 
   const blocks = new Map<string, Element>();
   const blockFor = (element: Element): string => {
@@ -93,6 +108,7 @@ export function collapseDomains(model: Model, explore: string[]): Model {
   return {
     ...model,
     domains: model.domains.filter((d) => explored.has(d.id)),
+    collapsed: [...model.collapsed, ...model.domains.filter((d) => !explored.has(d.id))],
     elements: [...elements, ...blocks.values()],
     edges,
     checks,

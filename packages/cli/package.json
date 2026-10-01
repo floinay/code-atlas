@@ -17,6 +17,7 @@
     "@code-atlas/extractor-yeda": "workspace:*",
     "@code-atlas/model": "workspace:*",
     "chokidar": "^4.0.0",
+    "launch-editor": "^2.14.1",
     "tsx": "^4.0.0",
     "ws": "^8.0.0",
     "yaml": "^2.0.0"

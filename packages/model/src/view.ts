@@ -10,8 +10,11 @@ export type ViewNode = {
   /** The first member. Bundled members share edges and response, so it stands for all. */
   element: Element;
   members: Element[];
-  /** Set by a failed check: this node is missing an expected connection. */
-  warning?: { checkIds: string[] };
+  /**
+   * Set by a failed check: this node is missing an expected connection.
+   * `known` when every finding on it is already in the baseline.
+   */
+  warning?: { checkIds: string[]; known: boolean };
 };
 
 export type ViewEdge = {
@@ -118,7 +121,12 @@ export function buildView(model: Model): View {
     const source = nodeOf.get(check.element);
     if (!source) continue;
     const node = byId.get(source)!;
-    node.warning = { checkIds: [...(node.warning?.checkIds ?? []), check.id] };
+    node.warning = {
+      checkIds: [...(node.warning?.checkIds ?? []), check.id],
+      known: (node.warning?.known ?? true) && check.known,
+    };
+    // A known finding stays on its node, but does not draw the missing connection.
+    if (check.known) continue;
     for (const missing of check.missing) {
       const target = nodeOf.get(missing);
       if (target)

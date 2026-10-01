@@ -27,11 +27,17 @@ pnpm atlas serve ../my-repo         # http://localhost:4400, follows file change
 extracts again, works out what is new, keeps every node where it was and pushes the update to the
 browser. New elements get a badge; a new event that a projection forgot gets a warning.
 
-It keeps the layout in `<repo>/.code-atlas/layout.json`. Pass `--state-dir` to keep it elsewhere,
-for example when the repository must stay untouched.
+On the map you can fold any domain into a block and open it again, so a large repository reads a
+few domains at a time. Findings that were there before you started watching stay quiet; only new
+ones are raised. A click on a file path opens it in your editor.
+
+It keeps the layout in `<repo>/.code-atlas/layout.json`. Pass `--state-dir` to keep it elsewhere
+and `--config` to read the domains file from elsewhere, for example when the repository must stay
+untouched.
 
 ```bash
-pnpm atlas serve ../my-repo --only organizations,tags    # two domains in full, neighbours collapsed
+pnpm atlas serve ../my-repo --only organizations,tags    # start with two domains in full
+pnpm atlas serve ../my-repo --editor cursor              # the editor that file paths open in
 pnpm atlas extract ../my-repo --out model.json           # the model as a file
 pnpm dev                                                 # web app with hot reload, on :5273
 ```

@@ -42,8 +42,27 @@ export function runChecks(model: Pick<Model, 'elements' | 'edges'>): Check[] {
           consumers: missing.map((id) => byId.get(id)?.label ?? id),
           handledSiblings: siblings.length,
         },
+        known: false,
       });
     }
   }
   return checks;
+}
+
+/** One missing connection of a finding: the unit a baseline remembers. */
+export const findingKeys = (check: Check): string[] => check.missing.map((missing) => `${check.element}>${missing}`);
+
+/**
+ * Marks the findings a baseline already holds as known. A finding is known
+ * only when every connection it misses is in the baseline, so an old event
+ * that a new projection forgets is raised again.
+ */
+export function applyBaseline(checks: Check[], baseline: ReadonlySet<string>): Check[] {
+  return checks.map((check) => ({ ...check, known: findingKeys(check).every((key) => baseline.has(key)) }));
+}
+
+/** The baseline without what was fixed: a finding that comes back later is new again. */
+export function pruneBaseline(checks: Check[], baseline: ReadonlySet<string>): Set<string> {
+  const present = new Set(checks.flatMap(findingKeys));
+  return new Set([...baseline].filter((key) => present.has(key)));
 }

@@ -1,11 +1,12 @@
-import { DomainsConfig, type ServerMessage } from '@code-atlas/model';
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { DomainsConfig, buildView, computeLayout, type ClientMessage, type ServerMessage } from '@code-atlas/model';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
 import { pickAdapter } from '../src/adapters.ts';
+import { loadDomainsConfig } from '../src/config.ts';
 import { serve, type AtlasServer } from '../src/serve.ts';
 
 const mini = fileURLToPath(new URL('../../extractor-yeda/test/fixtures/mini', import.meta.url));
@@ -51,6 +52,7 @@ function client(url: string) {
         if (message.type === 'model') return message;
       }
     },
+    send: (message: ClientMessage) => socket.send(JSON.stringify(message)),
     close: () => socket.close(),
   };
 }
@@ -152,7 +154,7 @@ describe('serve', () => {
     // Billing follows every other order event, so the new one is flagged for it.
     expect(update.diff.addedChecks).toEqual([`unhandled-event:${added}`]);
     expect(update.feed.at(-1)).toMatchObject({ kind: 'warn', subject: { type: 'check', event: 'delivered', consumers: ['Invoices'] } });
-    expect(JSON.parse(readFileSync(join(root, '.code-atlas', 'layout.json'), 'utf8')).nodes[added]).toBeDefined();
+    expect(JSON.parse(readFileSync(join(root, '.code-atlas', 'layout.json'), 'utf8')).views['*'].nodes[added]).toBeDefined();
 
     // The agent fixes the projection: the warning goes away.
     edit(root, 'features/billing/src/lib/invoice.entities.ts', (text) =>
@@ -199,5 +201,149 @@ describe('serve', () => {
     expect(last.type).toBe('model');
     expect(server.model().elements.length).toBe(before - 1);
     expect(server.layout().nodes['orders:table:orders.notes']).toBeUndefined();
+  });
+  const savedState = (root: string) => JSON.parse(readFileSync(join(root, '.code-atlas', 'layout.json'), 'utf8'));
+  const refunded = 'unhandled-event:orders:event:orders.refunded';
+
+  it('starts quiet: what was already wrong is known, and stays so until it is raised again', async () => {
+    const root = workspace();
+    cleanup.push(() => rmSync(root, { recursive: true, force: true }));
+    const server = await start(root);
+    expect(server.model().checks.map((c) => [c.id, c.known])).toEqual([[refunded, true]]);
+    expect(savedState(root).baseline).toHaveLength(1);
+
+    const socket = client(server.url);
+    cleanup.push(() => socket.close());
+    await socket.next();
+    socket.send({ type: 'check', id: refunded, known: false });
+    const raised = await socket.nextModel();
+    expect(raised.model.checks[0]).toMatchObject({ id: refunded, known: false });
+    expect(raised.diff.addedElements).toEqual([]);
+    expect(savedState(root).baseline).toEqual([]);
+
+    socket.send({ type: 'check', id: refunded, known: true });
+    expect((await socket.nextModel()).model.checks[0]!.known).toBe(true);
+    await server.close();
+    expect((await start(root)).model().checks[0]!.known).toBe(true);
+  });
+
+  it('raises everything when the config asks for all checks', async () => {
+    const root = workspace();
+    cleanup.push(() => rmSync(root, { recursive: true, force: true }));
+    const server = await start(root, { config: DomainsConfig.parse({ checks: { mode: 'all' } }) });
+    expect(server.model().checks.map((c) => c.known)).toEqual([false]);
+    expect(savedState(root).baseline).toBeUndefined();
+  });
+
+  it('collapses and explores domains from the browser, one remembered layout per view', async () => {
+    const root = workspace();
+    cleanup.push(() => rmSync(root, { recursive: true, force: true }));
+    const server = await start(root);
+    const socket = client(server.url);
+    cleanup.push(() => socket.close());
+    const all = await socket.nextModel();
+    expect(all.model.collapsed).toEqual([]);
+
+    socket.send({ type: 'explore', domains: ['orders'] });
+    const focused = await socket.nextModel();
+    expect(focused.model.domains.map((d) => d.id)).toEqual(['orders']);
+    expect(focused.model.collapsed.map((d) => d.id)).toEqual(['billing', 'pages']);
+    expect(focused.diff.addedElements).toEqual([]);
+    expect(focused.feed).toEqual([]);
+    expect(Object.keys(focused.layout.regions)).toEqual(['orders']);
+    expect(server.explored()).toEqual(['orders']);
+    expect(savedState(root)).toMatchObject({ explore: ['orders'] });
+    expect(Object.keys(savedState(root).views)).toEqual(['*', 'orders']);
+
+    // A change in a collapsed domain is still extracted, and shows where the block touches the map.
+    edit(root, contracts, (text) => `// nothing\n${text}`);
+    expect((await socket.next()).type).toBe('feed');
+
+    socket.send({ type: 'explore', domains: null });
+    const back = await socket.nextModel();
+    expect(back.layout).toEqual(all.layout);
+    expect(savedState(root).explore).toEqual([]);
+
+    socket.send({ type: 'explore', domains: ['orders', 'nope'] });
+    expect((await socket.nextModel()).layout).toEqual(focused.layout);
+    await server.close();
+    // The choice outlives the server; --only speaks for one run and is not saved.
+    expect((await start(root)).explored()).toEqual(['orders']);
+    const once = await start(root, { explore: ['billing'] });
+    expect(once.explored()).toEqual(['billing']);
+    expect(savedState(root).explore).toEqual(['orders']);
+  });
+
+  it('keeps the positions of a layout file written by an earlier version', async () => {
+    const root = workspace();
+    cleanup.push(() => rmSync(root, { recursive: true, force: true }));
+    const model = (await start(root, { stateDir: join(root, 'elsewhere') })).model();
+    const old = computeLayout(buildView(model), model.domains);
+    const moved = 'orders:event:orders.placed';
+    old.nodes[moved]!.y += 300;
+    old.regions['orders']!.h += 300;
+    mkdirSync(join(root, '.code-atlas'));
+    writeFileSync(join(root, '.code-atlas', 'layout.json'), JSON.stringify(old));
+    const server = await start(root);
+    expect(server.layout().nodes[moved]).toEqual(old.nodes[moved]);
+    expect(savedState(root).version).toBe(2);
+  });
+
+  it('opens a file of the repository in the editor, and nothing else', async () => {
+    const root = workspace();
+    const out = join(mkdtempSync(join(tmpdir(), 'code-atlas-editor-')), 'opened.txt');
+    const script = join(dirname(out), 'editor.mjs');
+    writeFileSync(script, `import { writeFileSync } from 'node:fs';\nwriteFileSync(${JSON.stringify(out)}, process.argv.slice(2).join(' '));\n`);
+    cleanup.push(() => rmSync(root, { recursive: true, force: true }), () => rmSync(dirname(out), { recursive: true, force: true }));
+    const server = await start(root, { editor: `node ${script}` });
+    const open = (body: unknown, headers: Record<string, string> = {}) =>
+      fetch(`${server.url}/api/open`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...headers },
+        body: JSON.stringify(body),
+      });
+
+    const opened = await open({ file: contracts, line: 12 });
+    expect(await opened.json()).toEqual({ ok: true });
+    for (let i = 0; i < 50 && !existsSync(out); i++) await new Promise((done) => setTimeout(done, 20));
+    expect(readFileSync(out, 'utf8')).toContain(join(root, contracts));
+
+    expect((await open({ file: '../../etc/hosts' })).status).toBe(404);
+    expect((await open({ file: 'features/nope.ts' })).status).toBe(404);
+    expect((await open({ file: contracts }, { 'content-type': 'text/plain' })).status).toBe(405);
+    // A page on another site may not use the server, whatever it asks for.
+    expect((await open({ file: contracts }, { origin: 'https://example.com' })).status).toBe(403);
+    expect((await fetch(`${server.url}/api/model`, { headers: { origin: 'https://example.com' } })).status).toBe(403);
+    expect((await fetch(`${server.url}/api/model`, { headers: { origin: server.url } })).status).toBe(200);
+  });
+
+  it('says what went wrong when the editor cannot be started', async () => {
+    const root = workspace();
+    cleanup.push(() => rmSync(root, { recursive: true, force: true }));
+    const server = await start(root, { editor: 'code-atlas-no-such-editor' });
+    const response = await fetch(`${server.url}/api/open`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ file: contracts, line: 1 }),
+    });
+    expect(response.status).toBe(500);
+    expect(await response.json()).toMatchObject({ ok: false, error: expect.stringContaining('code-atlas-no-such-editor') });
+  });
+
+  it('reads the domains file from where it is told, and follows it', async () => {
+    const root = workspace();
+    const dir = mkdtempSync(join(tmpdir(), 'code-atlas-config-'));
+    const configFile = join(dir, 'domains.yaml');
+    writeFileSync(configFile, 'domains:\n  orders:\n    name: Sales\n');
+    cleanup.push(() => rmSync(root, { recursive: true, force: true }), () => rmSync(dir, { recursive: true, force: true }));
+    const server = await start(root, { config: loadDomainsConfig(root, configFile), configFile });
+    expect(server.model().domains.find((d) => d.id === 'orders')!.name).toBe('Sales');
+    const socket = client(server.url);
+    cleanup.push(() => socket.close());
+    await socket.next();
+    writeFileSync(configFile, 'explore: [billing]\n');
+    for (let message = await socket.next(); server.explored() === undefined; message = await socket.next()) void message;
+    expect(server.explored()).toEqual(['billing']);
+    expect(existsSync(join(root, '.code-atlas', 'domains.yaml'))).toBe(false);
   });
 });

@@ -128,7 +128,7 @@ export const NodeView = memo(function NodeView(props: Props) {
       transform={`translate(${box.x},${box.y})`}
       tabIndex={0}
       role="button"
-      aria-label={`${KINDS[node.kind].label} ${node.name}`}
+      aria-label={`${KINDS[node.kind].label} ${node.name}${node.warning ? `, ${node.warning.known ? t.hasKnownWarning : t.hasWarning}` : ''}`}
       data-id={node.id}
       style={{ '--k': `var(--${node.kind})` } as CSSProperties}
     >
@@ -144,7 +144,7 @@ export const NodeView = memo(function NodeView(props: Props) {
         </g>
       )}
       {node.warning && (
-        <g className="warnb" transform={`translate(${badgeRight - (isNew ? 48 : 0) - 9},0)`}>
+        <g className={node.warning.known ? 'warnb known' : 'warnb'} transform={`translate(${badgeRight - (isNew ? 48 : 0) - 9},0)`}>
           <circle r={10} />
           <text y={4.5} textAnchor="middle">
             !
