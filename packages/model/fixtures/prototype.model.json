@@ -1,0 +1,5442 @@
+{
+  "version": 1,
+  "repo": {
+    "name": "Yeda1-monorepo",
+    "branch": "main",
+    "adapter": "fixture"
+  },
+  "domains": [
+    {
+      "id": "organizations",
+      "name": "Organizations",
+      "path": "features/organizations",
+      "description": "Створення, життєвий цикл і синхронізація організацій з ZITADEL"
+    },
+    {
+      "id": "tags",
+      "name": "Tags",
+      "path": "features/tags",
+      "description": "Каталог тегів у scope і прив’язка тегів до сутностей"
+    }
+  ],
+  "elements": [
+    {
+      "id": "organizations:command:organizations.create",
+      "kind": "command",
+      "domain": "organizations",
+      "name": "organizations.create",
+      "label": "create",
+      "description": "Починає створення організації. Повертає 202 з операцією провіжнінгу, а не саму організацію; клієнт опитує provisioning.get.",
+      "evidence": {
+        "file": "features/organizations/src/lib/create-organization.ts",
+        "line": 1
+      },
+      "http": {
+        "method": "POST",
+        "path": "/api/organizations/create"
+      },
+      "input": {
+        "type": "{ requestId }",
+        "refs": [
+          "OrganizationFields"
+        ],
+        "fields": [
+          {
+            "name": "…",
+            "type": "OrganizationFields",
+            "optional": false,
+            "refs": [
+              "OrganizationFields"
+            ]
+          },
+          {
+            "name": "requestId",
+            "type": "uuidv7",
+            "optional": false,
+            "refs": []
+          }
+        ]
+      },
+      "responses": [
+        {
+          "status": 202,
+          "body": {
+            "type": "OrganizationProvisioning",
+            "refs": [
+              "OrganizationProvisioning"
+            ]
+          }
+        }
+      ],
+      "errors": {
+        "statuses": [
+          403,
+          404,
+          409,
+          503
+        ],
+        "codes": [
+          "permission-denied",
+          "organization-not-found",
+          "version-conflict",
+          "request-conflict",
+          "organization-inactive",
+          "root-organization-protected",
+          "organization-unavailable",
+          "upstream-conflict",
+          "capacity-exceeded",
+          "slug-taken",
+          "logo-invalid",
+          "logo-too-large"
+        ]
+      },
+      "appends": [
+        "organizations:event:organizations.provisioning-changed",
+        "organizations:event:organizations.registry-changed",
+        "organizations:event:organizations.slug-changed"
+      ]
+    },
+    {
+      "id": "organizations:command:organizations.update",
+      "kind": "command",
+      "domain": "organizations",
+      "name": "organizations.update",
+      "label": "update",
+      "description": "Змінює назву, slug і теги. Потрібен expectedVersion, прочитаний через organizations.get.",
+      "evidence": {
+        "file": "features/organizations/src/lib/update-organization.ts",
+        "line": 1
+      },
+      "http": {
+        "method": "POST",
+        "path": "/api/organizations/update"
+      },
+      "input": {
+        "type": "{ organizationId, requestId, expectedVersion, changes }",
+        "refs": [],
+        "fields": [
+          {
+            "name": "organizationId",
+            "type": "string",
+            "optional": false,
+            "refs": []
+          },
+          {
+            "name": "requestId",
+            "type": "uuidv7",
+            "optional": false,
+            "note": "ідемпотентність",
+            "refs": []
+          },
+          {
+            "name": "expectedVersion",
+            "type": "string",
+            "optional": false,
+            "note": "з organizations.get",
+            "refs": []
+          },
+          {
+            "name": "changes",
+            "type": "{ name?, slug?, tags? }",
+            "optional": false,
+            "note": "хоча б одне поле",
+            "refs": []
+          }
+        ]
+      },
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "type": "Organization",
+            "refs": [
+              "Organization"
+            ]
+          }
+        }
+      ],
+      "errors": {
+        "statuses": [
+          403,
+          404,
+          409,
+          503
+        ],
+        "codes": [
+          "permission-denied",
+          "organization-not-found",
+          "version-conflict",
+          "request-conflict",
+          "organization-inactive",
+          "root-organization-protected",
+          "organization-unavailable",
+          "upstream-conflict",
+          "capacity-exceeded",
+          "slug-taken",
+          "logo-invalid",
+          "logo-too-large"
+        ]
+      },
+      "appends": [
+        "organizations:event:organizations.changed",
+        "organizations:event:organizations.slug-changed",
+        "organizations:event:organizations.sync-changed",
+        "organizations:event:organizations.receipt-recorded"
+      ]
+    },
+    {
+      "id": "organizations:command:organizations.suspend",
+      "kind": "command",
+      "domain": "organizations",
+      "name": "organizations.suspend",
+      "label": "suspend",
+      "description": "Призупиняє активну організацію до organizations.resume.",
+      "evidence": {
+        "file": "features/organizations/src/lib/suspend-organization.ts",
+        "line": 1
+      },
+      "http": {
+        "method": "POST",
+        "path": "/api/organizations/suspend"
+      },
+      "input": {
+        "type": "{ organizationId, requestId, expectedVersion }",
+        "refs": [],
+        "fields": [
+          {
+            "name": "organizationId",
+            "type": "string",
+            "optional": false,
+            "refs": []
+          },
+          {
+            "name": "requestId",
+            "type": "uuidv7",
+            "optional": false,
+            "note": "ідемпотентність",
+            "refs": []
+          },
+          {
+            "name": "expectedVersion",
+            "type": "string",
+            "optional": false,
+            "note": "з organizations.get",
+            "refs": []
+          }
+        ]
+      },
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "type": "Organization",
+            "refs": [
+              "Organization"
+            ]
+          }
+        }
+      ],
+      "errors": {
+        "statuses": [
+          403,
+          404,
+          409,
+          503
+        ],
+        "codes": [
+          "permission-denied",
+          "organization-not-found",
+          "version-conflict",
+          "request-conflict",
+          "organization-inactive",
+          "root-organization-protected",
+          "organization-unavailable",
+          "upstream-conflict",
+          "capacity-exceeded",
+          "slug-taken",
+          "logo-invalid",
+          "logo-too-large"
+        ]
+      },
+      "appends": [
+        "organizations:event:organizations.changed",
+        "organizations:event:organizations.sync-changed",
+        "organizations:event:organizations.receipt-recorded"
+      ]
+    },
+    {
+      "id": "organizations:command:organizations.resume",
+      "kind": "command",
+      "domain": "organizations",
+      "name": "organizations.resume",
+      "label": "resume",
+      "description": "Повертає призупинену організацію до активної.",
+      "evidence": {
+        "file": "features/organizations/src/lib/resume-organization.ts",
+        "line": 1
+      },
+      "http": {
+        "method": "POST",
+        "path": "/api/organizations/resume"
+      },
+      "input": {
+        "type": "{ organizationId, requestId, expectedVersion }",
+        "refs": [],
+        "fields": [
+          {
+            "name": "organizationId",
+            "type": "string",
+            "optional": false,
+            "refs": []
+          },
+          {
+            "name": "requestId",
+            "type": "uuidv7",
+            "optional": false,
+            "note": "ідемпотентність",
+            "refs": []
+          },
+          {
+            "name": "expectedVersion",
+            "type": "string",
+            "optional": false,
+            "note": "з organizations.get",
+            "refs": []
+          }
+        ]
+      },
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "type": "Organization",
+            "refs": [
+              "Organization"
+            ]
+          }
+        }
+      ],
+      "errors": {
+        "statuses": [
+          403,
+          404,
+          409,
+          503
+        ],
+        "codes": [
+          "permission-denied",
+          "organization-not-found",
+          "version-conflict",
+          "request-conflict",
+          "organization-inactive",
+          "root-organization-protected",
+          "organization-unavailable",
+          "upstream-conflict",
+          "capacity-exceeded",
+          "slug-taken",
+          "logo-invalid",
+          "logo-too-large"
+        ]
+      },
+      "appends": [
+        "organizations:event:organizations.changed",
+        "organizations:event:organizations.sync-changed",
+        "organizations:event:organizations.receipt-recorded"
+      ]
+    },
+    {
+      "id": "organizations:command:organizations.archive",
+      "kind": "command",
+      "domain": "organizations",
+      "name": "organizations.archive",
+      "label": "archive",
+      "description": "Закриває організацію. Історія лишається, нічого не видаляється.",
+      "evidence": {
+        "file": "features/organizations/src/lib/archive-organization.ts",
+        "line": 1
+      },
+      "http": {
+        "method": "POST",
+        "path": "/api/organizations/archive"
+      },
+      "input": {
+        "type": "{ organizationId, requestId, expectedVersion }",
+        "refs": [],
+        "fields": [
+          {
+            "name": "organizationId",
+            "type": "string",
+            "optional": false,
+            "refs": []
+          },
+          {
+            "name": "requestId",
+            "type": "uuidv7",
+            "optional": false,
+            "note": "ідемпотентність",
+            "refs": []
+          },
+          {
+            "name": "expectedVersion",
+            "type": "string",
+            "optional": false,
+            "note": "з organizations.get",
+            "refs": []
+          }
+        ]
+      },
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "type": "Organization",
+            "refs": [
+              "Organization"
+            ]
+          }
+        }
+      ],
+      "errors": {
+        "statuses": [
+          403,
+          404,
+          409,
+          503
+        ],
+        "codes": [
+          "permission-denied",
+          "organization-not-found",
+          "version-conflict",
+          "request-conflict",
+          "organization-inactive",
+          "root-organization-protected",
+          "organization-unavailable",
+          "upstream-conflict",
+          "capacity-exceeded",
+          "slug-taken",
+          "logo-invalid",
+          "logo-too-large"
+        ]
+      },
+      "appends": [
+        "organizations:event:organizations.changed",
+        "organizations:event:organizations.sync-changed",
+        "organizations:event:organizations.receipt-recorded"
+      ]
+    },
+    {
+      "id": "organizations:command:organizations.unarchive",
+      "kind": "command",
+      "domain": "organizations",
+      "name": "organizations.unarchive",
+      "label": "unarchive",
+      "description": "Повертає заархівовану організацію як призупинену.",
+      "evidence": {
+        "file": "features/organizations/src/lib/unarchive-organization.ts",
+        "line": 1
+      },
+      "http": {
+        "method": "POST",
+        "path": "/api/organizations/unarchive"
+      },
+      "input": {
+        "type": "{ organizationId, requestId, expectedVersion }",
+        "refs": [],
+        "fields": [
+          {
+            "name": "organizationId",
+            "type": "string",
+            "optional": false,
+            "refs": []
+          },
+          {
+            "name": "requestId",
+            "type": "uuidv7",
+            "optional": false,
+            "note": "ідемпотентність",
+            "refs": []
+          },
+          {
+            "name": "expectedVersion",
+            "type": "string",
+            "optional": false,
+            "note": "з organizations.get",
+            "refs": []
+          }
+        ]
+      },
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "type": "Organization",
+            "refs": [
+              "Organization"
+            ]
+          }
+        }
+      ],
+      "errors": {
+        "statuses": [
+          403,
+          404,
+          409,
+          503
+        ],
+        "codes": [
+          "permission-denied",
+          "organization-not-found",
+          "version-conflict",
+          "request-conflict",
+          "organization-inactive",
+          "root-organization-protected",
+          "organization-unavailable",
+          "upstream-conflict",
+          "capacity-exceeded",
+          "slug-taken",
+          "logo-invalid",
+          "logo-too-large"
+        ]
+      },
+      "appends": [
+        "organizations:event:organizations.changed",
+        "organizations:event:organizations.sync-changed",
+        "organizations:event:organizations.receipt-recorded"
+      ]
+    },
+    {
+      "id": "organizations:command:organizations.logo.publish",
+      "kind": "command",
+      "domain": "organizations",
+      "name": "organizations.logo.publish",
+      "label": "logo.publish",
+      "description": "Робить завантажене зображення логотипом організації.",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization-logo.ts",
+        "line": 1
+      },
+      "http": {
+        "method": "POST",
+        "path": "/api/organizations/logo/publish"
+      },
+      "input": {
+        "type": "{ organizationId, requestId, expectedVersion, key }",
+        "refs": [],
+        "fields": [
+          {
+            "name": "organizationId",
+            "type": "string",
+            "optional": false,
+            "refs": []
+          },
+          {
+            "name": "requestId",
+            "type": "uuidv7",
+            "optional": false,
+            "note": "ідемпотентність",
+            "refs": []
+          },
+          {
+            "name": "expectedVersion",
+            "type": "string",
+            "optional": false,
+            "note": "з organizations.get",
+            "refs": []
+          },
+          {
+            "name": "key",
+            "type": "string",
+            "optional": false,
+            "note": "ключ із logo.sign-upload",
+            "refs": []
+          }
+        ]
+      },
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "type": "Organization",
+            "refs": [
+              "Organization"
+            ]
+          }
+        }
+      ],
+      "errors": {
+        "statuses": [
+          403,
+          404,
+          409,
+          503
+        ],
+        "codes": [
+          "permission-denied",
+          "organization-not-found",
+          "version-conflict",
+          "request-conflict",
+          "organization-inactive",
+          "root-organization-protected",
+          "organization-unavailable",
+          "upstream-conflict",
+          "capacity-exceeded",
+          "slug-taken",
+          "logo-invalid",
+          "logo-too-large"
+        ]
+      },
+      "appends": [
+        "organizations:event:organizations.changed",
+        "organizations:event:organizations.sync-changed",
+        "organizations:event:organizations.receipt-recorded"
+      ]
+    },
+    {
+      "id": "organizations:command:organizations.logo.remove",
+      "kind": "command",
+      "domain": "organizations",
+      "name": "organizations.logo.remove",
+      "label": "logo.remove",
+      "description": "Прибирає логотип і видаляє файл.",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization-logo.ts",
+        "line": 1
+      },
+      "http": {
+        "method": "POST",
+        "path": "/api/organizations/logo/remove"
+      },
+      "input": {
+        "type": "{ organizationId, requestId, expectedVersion }",
+        "refs": [],
+        "fields": [
+          {
+            "name": "organizationId",
+            "type": "string",
+            "optional": false,
+            "refs": []
+          },
+          {
+            "name": "requestId",
+            "type": "uuidv7",
+            "optional": false,
+            "note": "ідемпотентність",
+            "refs": []
+          },
+          {
+            "name": "expectedVersion",
+            "type": "string",
+            "optional": false,
+            "note": "з organizations.get",
+            "refs": []
+          }
+        ]
+      },
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "type": "Organization",
+            "refs": [
+              "Organization"
+            ]
+          }
+        }
+      ],
+      "errors": {
+        "statuses": [
+          403,
+          404,
+          409,
+          503
+        ],
+        "codes": [
+          "permission-denied",
+          "organization-not-found",
+          "version-conflict",
+          "request-conflict",
+          "organization-inactive",
+          "root-organization-protected",
+          "organization-unavailable",
+          "upstream-conflict",
+          "capacity-exceeded",
+          "slug-taken",
+          "logo-invalid",
+          "logo-too-large"
+        ]
+      },
+      "appends": [
+        "organizations:event:organizations.changed",
+        "organizations:event:organizations.sync-changed",
+        "organizations:event:organizations.receipt-recorded"
+      ]
+    },
+    {
+      "id": "organizations:command:organizations.provisioning.retry",
+      "kind": "command",
+      "domain": "organizations",
+      "name": "organizations.provisioning.retry",
+      "label": "provisioning.retry",
+      "description": "Повторює незавершене створення. Робить те саме, що й фоновий цикл.",
+      "evidence": {
+        "file": "features/organizations/src/lib/provision-organization.ts",
+        "line": 1
+      },
+      "http": {
+        "method": "POST",
+        "path": "/api/organizations/provisioning/retry"
+      },
+      "input": {
+        "type": "{ operationId, requestId }",
+        "refs": [],
+        "fields": [
+          {
+            "name": "operationId",
+            "type": "uuidv7",
+            "optional": false,
+            "refs": []
+          },
+          {
+            "name": "requestId",
+            "type": "uuidv7",
+            "optional": false,
+            "refs": []
+          }
+        ]
+      },
+      "responses": [
+        {
+          "status": 202,
+          "body": {
+            "type": "OrganizationProvisioning",
+            "refs": [
+              "OrganizationProvisioning"
+            ]
+          }
+        }
+      ],
+      "errors": {
+        "statuses": [
+          403,
+          404,
+          409,
+          503
+        ],
+        "codes": [
+          "permission-denied",
+          "organization-not-found",
+          "version-conflict",
+          "request-conflict",
+          "organization-inactive",
+          "root-organization-protected",
+          "organization-unavailable",
+          "upstream-conflict",
+          "capacity-exceeded",
+          "slug-taken",
+          "logo-invalid",
+          "logo-too-large"
+        ]
+      },
+      "appends": [
+        "organizations:event:organizations.changed",
+        "organizations:event:organizations.provisioning-changed",
+        "organizations:event:organizations.registry-changed",
+        "organizations:event:organizations.sync-changed"
+      ]
+    },
+    {
+      "id": "organizations:worker:provisioning resume",
+      "kind": "worker",
+      "domain": "organizations",
+      "name": "provisioning resume",
+      "label": "provisioning resume",
+      "description": "Сервер сам відновлює незавершені створення організацій у фоні.",
+      "evidence": {
+        "file": "features/organizations/src/lib/organizations.ts",
+        "line": 1
+      },
+      "trigger": "loop",
+      "appends": [
+        "organizations:event:organizations.changed",
+        "organizations:event:organizations.provisioning-changed",
+        "organizations:event:organizations.registry-changed",
+        "organizations:event:organizations.sync-changed"
+      ]
+    },
+    {
+      "id": "organizations:worker:zitadel sync",
+      "kind": "worker",
+      "domain": "organizations",
+      "name": "zitadel sync",
+      "label": "zitadel sync",
+      "description": "Доводить організацію в ZITADEL до бажаної версії і записує стан синхронізації.",
+      "evidence": {
+        "file": "features/organizations/src/lib/synchronize-organization.ts",
+        "line": 1
+      },
+      "trigger": "loop",
+      "appends": [
+        "organizations:event:organizations.sync-changed"
+      ]
+    },
+    {
+      "id": "organizations:worker:adopt organizations",
+      "kind": "worker",
+      "domain": "organizations",
+      "name": "adopt organizations",
+      "label": "adopt organizations",
+      "description": "Додає в реєстр організації, які розгортання прийняло, а не створило.",
+      "evidence": {
+        "file": "features/organizations/src/lib/adopt-organizations.ts",
+        "line": 1
+      },
+      "trigger": "startup",
+      "appends": [
+        "organizations:event:organizations.registry-changed",
+        "organizations:event:organizations.changed"
+      ]
+    },
+    {
+      "id": "organizations:worker:slug backfill",
+      "kind": "worker",
+      "domain": "organizations",
+      "name": "slug backfill",
+      "label": "slug backfill",
+      "description": "Проставляє slug старим організаціям і фіксує факт міграції.",
+      "evidence": {
+        "file": "features/organizations/src/lib/backfill-organization-slugs.ts",
+        "line": 1
+      },
+      "trigger": "migration",
+      "appends": [
+        "organizations:event:organizations.slug-changed",
+        "organizations:event:organizations.slugs-backfilled"
+      ]
+    },
+    {
+      "id": "organizations:query:organizations.get",
+      "kind": "query",
+      "domain": "organizations",
+      "name": "organizations.get",
+      "label": "get",
+      "description": "Деталі організації і стан синхронізації. Повертає version для наступних змін.",
+      "evidence": {
+        "file": "features/organizations/src/lib/organizations.ts",
+        "line": 1
+      },
+      "http": {
+        "method": "POST",
+        "path": "/api/organizations/get"
+      },
+      "input": {
+        "type": "{ organizationId }",
+        "refs": [],
+        "fields": [
+          {
+            "name": "organizationId",
+            "type": "string",
+            "optional": false,
+            "refs": []
+          }
+        ]
+      },
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "type": "{ organization, sync }",
+            "refs": [
+              "Organization",
+              "OrganizationSync"
+            ],
+            "fields": [
+              {
+                "name": "organization",
+                "type": "Organization",
+                "optional": false,
+                "refs": [
+                  "Organization"
+                ]
+              },
+              {
+                "name": "sync",
+                "type": "OrganizationSync | null",
+                "optional": false,
+                "refs": [
+                  "OrganizationSync"
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "errors": {
+        "statuses": [
+          403,
+          404,
+          409,
+          503
+        ],
+        "codes": [
+          "permission-denied",
+          "organization-not-found",
+          "version-conflict",
+          "request-conflict",
+          "organization-inactive",
+          "root-organization-protected",
+          "organization-unavailable",
+          "upstream-conflict",
+          "capacity-exceeded",
+          "slug-taken",
+          "logo-invalid",
+          "logo-too-large"
+        ]
+      }
+    },
+    {
+      "id": "organizations:query:organizations.resolve-brand",
+      "kind": "query",
+      "domain": "organizations",
+      "name": "organizations.resolve-brand",
+      "label": "resolve-brand",
+      "description": "Назва і логотип для сторінок входу, ще до автентифікації.",
+      "evidence": {
+        "file": "features/organizations/src/lib/organizations.ts",
+        "line": 1
+      },
+      "input": {
+        "type": "{ organizationId }",
+        "refs": [],
+        "fields": [
+          {
+            "name": "organizationId",
+            "type": "string",
+            "optional": false,
+            "refs": []
+          }
+        ]
+      },
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "type": "{ id, name, logoKey, lifecycle }",
+            "refs": [],
+            "fields": [
+              {
+                "name": "id",
+                "type": "string",
+                "optional": false,
+                "refs": []
+              },
+              {
+                "name": "name",
+                "type": "string",
+                "optional": false,
+                "refs": []
+              },
+              {
+                "name": "logoKey",
+                "type": "string | null",
+                "optional": false,
+                "refs": []
+              },
+              {
+                "name": "lifecycle",
+                "type": "Lifecycle",
+                "optional": false,
+                "refs": []
+              }
+            ]
+          }
+        }
+      ],
+      "errors": {
+        "statuses": [
+          403,
+          404,
+          409,
+          503
+        ],
+        "codes": [
+          "permission-denied",
+          "organization-not-found",
+          "version-conflict",
+          "request-conflict",
+          "organization-inactive",
+          "root-organization-protected",
+          "organization-unavailable",
+          "upstream-conflict",
+          "capacity-exceeded",
+          "slug-taken",
+          "logo-invalid",
+          "logo-too-large"
+        ]
+      }
+    },
+    {
+      "id": "organizations:query:organizations.check-lifecycle",
+      "kind": "query",
+      "domain": "organizations",
+      "name": "organizations.check-lifecycle",
+      "label": "check-lifecycle",
+      "description": "Чи організація активна.",
+      "evidence": {
+        "file": "features/organizations/src/lib/organizations.ts",
+        "line": 1
+      },
+      "input": {
+        "type": "{ organizationId }",
+        "refs": [],
+        "fields": [
+          {
+            "name": "organizationId",
+            "type": "string",
+            "optional": false,
+            "refs": []
+          }
+        ]
+      },
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "type": "{ lifecycle }",
+            "refs": [],
+            "fields": [
+              {
+                "name": "lifecycle",
+                "type": "Lifecycle",
+                "optional": false,
+                "refs": []
+              }
+            ]
+          }
+        }
+      ],
+      "errors": {
+        "statuses": [
+          403,
+          404,
+          409,
+          503
+        ],
+        "codes": [
+          "permission-denied",
+          "organization-not-found",
+          "version-conflict",
+          "request-conflict",
+          "organization-inactive",
+          "root-organization-protected",
+          "organization-unavailable",
+          "upstream-conflict",
+          "capacity-exceeded",
+          "slug-taken",
+          "logo-invalid",
+          "logo-too-large"
+        ]
+      }
+    },
+    {
+      "id": "organizations:query:organizations.check-slug",
+      "kind": "query",
+      "domain": "organizations",
+      "name": "organizations.check-slug",
+      "label": "check-slug",
+      "description": "Підказка, чи slug вільний. Остаточно резервує запис.",
+      "evidence": {
+        "file": "features/organizations/src/lib/organizations.ts",
+        "line": 1
+      },
+      "http": {
+        "method": "POST",
+        "path": "/api/organizations/slug/check"
+      },
+      "input": {
+        "type": "{ slug }",
+        "refs": [],
+        "fields": [
+          {
+            "name": "slug",
+            "type": "slug",
+            "optional": false,
+            "refs": []
+          }
+        ]
+      },
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "type": "{ available }",
+            "refs": [],
+            "fields": [
+              {
+                "name": "available",
+                "type": "boolean",
+                "optional": false,
+                "refs": []
+              }
+            ]
+          }
+        }
+      ],
+      "errors": {
+        "statuses": [
+          403,
+          404,
+          409,
+          503
+        ],
+        "codes": [
+          "permission-denied",
+          "organization-not-found",
+          "version-conflict",
+          "request-conflict",
+          "organization-inactive",
+          "root-organization-protected",
+          "organization-unavailable",
+          "upstream-conflict",
+          "capacity-exceeded",
+          "slug-taken",
+          "logo-invalid",
+          "logo-too-large"
+        ]
+      }
+    },
+    {
+      "id": "organizations:query:organizations.resolve-slug",
+      "kind": "query",
+      "domain": "organizations",
+      "name": "organizations.resolve-slug",
+      "label": "resolve-slug",
+      "description": "Знаходить організацію за slug.",
+      "evidence": {
+        "file": "features/organizations/src/lib/resolve-organization-slug.ts",
+        "line": 1
+      },
+      "http": {
+        "method": "POST",
+        "path": "/api/organizations/slug/resolve"
+      },
+      "input": {
+        "type": "{ slug }",
+        "refs": [],
+        "fields": [
+          {
+            "name": "slug",
+            "type": "slug",
+            "optional": false,
+            "refs": []
+          }
+        ]
+      },
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "type": "Organization",
+            "refs": [
+              "Organization"
+            ]
+          }
+        }
+      ],
+      "errors": {
+        "statuses": [
+          403,
+          404,
+          409,
+          503
+        ],
+        "codes": [
+          "permission-denied",
+          "organization-not-found",
+          "version-conflict",
+          "request-conflict",
+          "organization-inactive",
+          "root-organization-protected",
+          "organization-unavailable",
+          "upstream-conflict",
+          "capacity-exceeded",
+          "slug-taken",
+          "logo-invalid",
+          "logo-too-large"
+        ]
+      }
+    },
+    {
+      "id": "organizations:query:organizations.provisioning.get",
+      "kind": "query",
+      "domain": "organizations",
+      "name": "organizations.provisioning.get",
+      "label": "provisioning.get",
+      "description": "Стан незавершеного створення організації.",
+      "evidence": {
+        "file": "features/organizations/src/lib/get-organization-provisioning.ts",
+        "line": 1
+      },
+      "http": {
+        "method": "POST",
+        "path": "/api/organizations/provisioning/get"
+      },
+      "input": {
+        "type": "{ operationId }",
+        "refs": [],
+        "fields": [
+          {
+            "name": "operationId",
+            "type": "uuidv7",
+            "optional": false,
+            "refs": []
+          }
+        ]
+      },
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "type": "OrganizationProvisioning",
+            "refs": [
+              "OrganizationProvisioning"
+            ]
+          }
+        }
+      ],
+      "errors": {
+        "statuses": [
+          403,
+          404,
+          409,
+          503
+        ],
+        "codes": [
+          "permission-denied",
+          "organization-not-found",
+          "version-conflict",
+          "request-conflict",
+          "organization-inactive",
+          "root-organization-protected",
+          "organization-unavailable",
+          "upstream-conflict",
+          "capacity-exceeded",
+          "slug-taken",
+          "logo-invalid",
+          "logo-too-large"
+        ]
+      }
+    },
+    {
+      "id": "organizations:query:organizations.check-provisioning",
+      "kind": "query",
+      "domain": "organizations",
+      "name": "organizations.check-provisioning",
+      "label": "check-provisioning",
+      "description": "Той самий стан для довірених викликів усередині процесу.",
+      "evidence": {
+        "file": "features/organizations/src/lib/get-organization-provisioning.ts",
+        "line": 1
+      },
+      "input": {
+        "type": "{ operationId }",
+        "refs": [],
+        "fields": [
+          {
+            "name": "operationId",
+            "type": "uuidv7",
+            "optional": false,
+            "refs": []
+          }
+        ]
+      },
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "type": "OrganizationProvisioning",
+            "refs": [
+              "OrganizationProvisioning"
+            ]
+          }
+        }
+      ],
+      "errors": {
+        "statuses": [
+          403,
+          404,
+          409,
+          503
+        ],
+        "codes": [
+          "permission-denied",
+          "organization-not-found",
+          "version-conflict",
+          "request-conflict",
+          "organization-inactive",
+          "root-organization-protected",
+          "organization-unavailable",
+          "upstream-conflict",
+          "capacity-exceeded",
+          "slug-taken",
+          "logo-invalid",
+          "logo-too-large"
+        ]
+      }
+    },
+    {
+      "id": "organizations:query:organizations.registered",
+      "kind": "query",
+      "domain": "organizations",
+      "name": "organizations.registered",
+      "label": "registered",
+      "description": "Усі організації розгортання. Auth вирішує за ним, чиї акаунти є користувачами організацій.",
+      "evidence": {
+        "file": "features/organizations/src/lib/organizations.ts",
+        "line": 1
+      },
+      "input": {
+        "type": "{  }",
+        "refs": [],
+        "fields": []
+      },
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "type": "{ ids }",
+            "refs": [],
+            "fields": [
+              {
+                "name": "ids",
+                "type": "string[]",
+                "optional": false,
+                "note": "≤ 10 000",
+                "refs": []
+              }
+            ]
+          }
+        }
+      ],
+      "errors": {
+        "statuses": [
+          403,
+          404,
+          409,
+          503
+        ],
+        "codes": [
+          "permission-denied",
+          "organization-not-found",
+          "version-conflict",
+          "request-conflict",
+          "organization-inactive",
+          "root-organization-protected",
+          "organization-unavailable",
+          "upstream-conflict",
+          "capacity-exceeded",
+          "slug-taken",
+          "logo-invalid",
+          "logo-too-large"
+        ]
+      }
+    },
+    {
+      "id": "organizations:query:organizations.list-mine",
+      "kind": "query",
+      "domain": "organizations",
+      "name": "organizations.list-mine",
+      "label": "list-mine",
+      "description": "Організації, до яких має доступ поточний користувач. Доступ перевіряє через контракт Roles.",
+      "evidence": {
+        "file": "features/organizations/src/lib/list-my-organizations.ts",
+        "line": 1
+      },
+      "http": {
+        "method": "POST",
+        "path": "/api/organizations/list-mine"
+      },
+      "input": {
+        "type": "{ afterId }",
+        "refs": [],
+        "fields": [
+          {
+            "name": "afterId",
+            "type": "string",
+            "optional": true,
+            "refs": []
+          }
+        ]
+      },
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "type": "{ items, nextCursor }",
+            "refs": [
+              "Organization"
+            ],
+            "fields": [
+              {
+                "name": "items",
+                "type": "Organization[]",
+                "optional": false,
+                "refs": [
+                  "Organization"
+                ]
+              },
+              {
+                "name": "nextCursor",
+                "type": "string | null",
+                "optional": false,
+                "refs": []
+              }
+            ]
+          }
+        }
+      ],
+      "errors": {
+        "statuses": [
+          403,
+          404,
+          409,
+          503
+        ],
+        "codes": [
+          "permission-denied",
+          "organization-not-found",
+          "version-conflict",
+          "request-conflict",
+          "organization-inactive",
+          "root-organization-protected",
+          "organization-unavailable",
+          "upstream-conflict",
+          "capacity-exceeded",
+          "slug-taken",
+          "logo-invalid",
+          "logo-too-large"
+        ]
+      }
+    },
+    {
+      "id": "organizations:aggregate:Organization",
+      "kind": "aggregate",
+      "domain": "organizations",
+      "name": "Organization",
+      "label": "Organization",
+      "description": "Поточний стан організації: назва, slug, теги, логотип, lifecycle, version.",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization.aggregates.ts",
+        "line": 1
+      },
+      "state": {
+        "type": "Organization | null",
+        "refs": [
+          "Organization"
+        ]
+      },
+      "storage": {
+        "kind": "event-store",
+        "stream": "Organization",
+        "snapshot": true
+      }
+    },
+    {
+      "id": "organizations:aggregate:OrganizationSync",
+      "kind": "aggregate",
+      "domain": "organizations",
+      "name": "OrganizationSync",
+      "label": "OrganizationSync",
+      "description": "Стан синхронізації з ZITADEL.",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization.aggregates.ts",
+        "line": 1
+      },
+      "state": {
+        "type": "OrganizationSync | null",
+        "refs": [
+          "OrganizationSync"
+        ]
+      },
+      "storage": {
+        "kind": "event-store",
+        "stream": "OrganizationSync",
+        "snapshot": true
+      }
+    },
+    {
+      "id": "organizations:aggregate:OrganizationReceipt",
+      "kind": "aggregate",
+      "domain": "organizations",
+      "name": "OrganizationReceipt",
+      "label": "OrganizationReceipt",
+      "description": "Квитанція виконаної дії для ідемпотентних повторів за requestId.",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization.aggregates.ts",
+        "line": 1
+      },
+      "state": {
+        "type": "OrganizationReceipt | null",
+        "refs": [
+          "OrganizationReceipt"
+        ]
+      },
+      "storage": {
+        "kind": "event-store",
+        "stream": "OrganizationReceipt",
+        "snapshot": true
+      }
+    },
+    {
+      "id": "organizations:aggregate:OrganizationSlug",
+      "kind": "aggregate",
+      "domain": "organizations",
+      "name": "OrganizationSlug",
+      "label": "OrganizationSlug",
+      "description": "Гарантує унікальність slug: один стрім на slug.",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization.aggregates.ts",
+        "line": 1
+      },
+      "state": {
+        "type": "OrganizationSlug | null",
+        "refs": [
+          "OrganizationSlug"
+        ]
+      },
+      "storage": {
+        "kind": "event-store",
+        "stream": "OrganizationSlug",
+        "snapshot": true
+      }
+    },
+    {
+      "id": "organizations:aggregate:OrganizationProvisioning",
+      "kind": "aggregate",
+      "domain": "organizations",
+      "name": "OrganizationProvisioning",
+      "label": "OrganizationProvisioning",
+      "description": "Операція створення, її стадії і результат.",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization.aggregates.ts",
+        "line": 1
+      },
+      "state": {
+        "type": "OrganizationProvisioning | null",
+        "refs": [
+          "OrganizationProvisioning"
+        ]
+      },
+      "storage": {
+        "kind": "event-store",
+        "stream": "OrganizationProvisioning",
+        "snapshot": true
+      }
+    },
+    {
+      "id": "organizations:aggregate:OrganizationRegistry",
+      "kind": "aggregate",
+      "domain": "organizations",
+      "name": "OrganizationRegistry",
+      "label": "OrganizationRegistry",
+      "description": "Усі організації, створені або прийняті цим розгортанням.",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization.aggregates.ts",
+        "line": 1
+      },
+      "state": {
+        "type": "OrganizationRegistry | null",
+        "refs": [
+          "OrganizationRegistry"
+        ]
+      },
+      "storage": {
+        "kind": "event-store",
+        "stream": "OrganizationRegistry",
+        "snapshot": true
+      }
+    },
+    {
+      "id": "organizations:aggregate:OrganizationSlugMigration",
+      "kind": "aggregate",
+      "domain": "organizations",
+      "name": "OrganizationSlugMigration",
+      "label": "OrganizationSlugMigration",
+      "description": "Позначка, що backfill slug уже виконано.",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization.aggregates.ts",
+        "line": 1
+      },
+      "state": {
+        "type": "{ completed: true } | null",
+        "refs": []
+      },
+      "storage": {
+        "kind": "event-store",
+        "stream": "OrganizationSlugMigration",
+        "snapshot": true
+      }
+    },
+    {
+      "id": "organizations:event:organizations.changed",
+      "kind": "event",
+      "domain": "organizations",
+      "name": "organizations.changed",
+      "label": "changed",
+      "evidence": {
+        "file": "features/organizations/contracts/src/lib/organizations-contracts.ts",
+        "line": 1
+      },
+      "payload": {
+        "type": "{ organization, action }",
+        "refs": [
+          "Organization"
+        ],
+        "fields": [
+          {
+            "name": "organization",
+            "type": "Organization",
+            "optional": false,
+            "refs": [
+              "Organization"
+            ]
+          },
+          {
+            "name": "action",
+            "type": "'created' | 'adopted' | 'updated' | 'activated' | 'suspended' | 'reactivated' | 'resumed' | 'archived' | 'unarchived'",
+            "optional": false,
+            "refs": []
+          }
+        ]
+      },
+      "schemaVersion": 1
+    },
+    {
+      "id": "organizations:event:organizations.sync-changed",
+      "kind": "event",
+      "domain": "organizations",
+      "name": "organizations.sync-changed",
+      "label": "sync-changed",
+      "evidence": {
+        "file": "features/organizations/contracts/src/lib/organizations-contracts.ts",
+        "line": 1
+      },
+      "payload": {
+        "type": "OrganizationSync",
+        "refs": [
+          "OrganizationSync"
+        ]
+      },
+      "schemaVersion": 1
+    },
+    {
+      "id": "organizations:event:organizations.receipt-recorded",
+      "kind": "event",
+      "domain": "organizations",
+      "name": "organizations.receipt-recorded",
+      "label": "receipt-recorded",
+      "evidence": {
+        "file": "features/organizations/contracts/src/lib/organizations-contracts.ts",
+        "line": 1
+      },
+      "payload": {
+        "type": "OrganizationReceipt",
+        "refs": [
+          "OrganizationReceipt"
+        ]
+      },
+      "schemaVersion": 1
+    },
+    {
+      "id": "organizations:event:organizations.slug-changed",
+      "kind": "event",
+      "domain": "organizations",
+      "name": "organizations.slug-changed",
+      "label": "slug-changed",
+      "evidence": {
+        "file": "features/organizations/contracts/src/lib/organizations-contracts.ts",
+        "line": 1
+      },
+      "payload": {
+        "type": "OrganizationSlug",
+        "refs": [
+          "OrganizationSlug"
+        ]
+      },
+      "schemaVersion": 1
+    },
+    {
+      "id": "organizations:event:organizations.provisioning-changed",
+      "kind": "event",
+      "domain": "organizations",
+      "name": "organizations.provisioning-changed",
+      "label": "provisioning-changed",
+      "evidence": {
+        "file": "features/organizations/contracts/src/lib/organizations-contracts.ts",
+        "line": 1
+      },
+      "payload": {
+        "type": "OrganizationProvisioning",
+        "refs": [
+          "OrganizationProvisioning"
+        ]
+      },
+      "schemaVersion": 1
+    },
+    {
+      "id": "organizations:event:organizations.registry-changed",
+      "kind": "event",
+      "domain": "organizations",
+      "name": "organizations.registry-changed",
+      "label": "registry-changed",
+      "evidence": {
+        "file": "features/organizations/contracts/src/lib/organizations-contracts.ts",
+        "line": 1
+      },
+      "payload": {
+        "type": "OrganizationRegistry",
+        "refs": [
+          "OrganizationRegistry"
+        ]
+      },
+      "schemaVersion": 1
+    },
+    {
+      "id": "organizations:event:organizations.slugs-backfilled",
+      "kind": "event",
+      "domain": "organizations",
+      "name": "organizations.slugs-backfilled",
+      "label": "slugs-backfilled",
+      "evidence": {
+        "file": "features/organizations/contracts/src/lib/organizations-contracts.ts",
+        "line": 1
+      },
+      "payload": {
+        "type": "{ completed }",
+        "refs": [],
+        "fields": [
+          {
+            "name": "completed",
+            "type": "true",
+            "optional": false,
+            "refs": []
+          }
+        ]
+      },
+      "schemaVersion": 1
+    },
+    {
+      "id": "organizations:projection:organizations.organizations",
+      "kind": "projection",
+      "domain": "organizations",
+      "name": "organizations.organizations",
+      "label": "Organizations",
+      "description": "Список організацій разом зі станом синхронізації. Пише в read_organizations і в live-колекцію.",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization.entities.ts",
+        "line": 1
+      },
+      "entity": {
+        "name": "organization",
+        "permissions": [
+          "read",
+          "update"
+        ],
+        "row": {
+          "type": "OrganizationListItem",
+          "refs": [
+            "OrganizationListItem"
+          ]
+        },
+        "consumer": "organizations-projections-organizations-entities-1",
+        "search": [
+          "id",
+          "name",
+          "slug",
+          "tags"
+        ]
+      }
+    },
+    {
+      "id": "organizations:projection:organizations.activity",
+      "kind": "projection",
+      "domain": "organizations",
+      "name": "organizations.activity",
+      "label": "Activity",
+      "description": "Стрічка дій в організації: зміни організації, ролей, політик і тегів. Schema v3.",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization-activity.ts",
+        "line": 1
+      },
+      "entity": {
+        "name": "organization_activity",
+        "permissions": [
+          "read"
+        ],
+        "row": {
+          "type": "OrganizationActivity",
+          "refs": [
+            "OrganizationActivity"
+          ]
+        },
+        "consumer": "organizations-projections-activity-entities-1"
+      }
+    },
+    {
+      "id": "organizations:projection:organizations.actors",
+      "kind": "projection",
+      "domain": "organizations",
+      "name": "organizations.actors",
+      "label": "Actors",
+      "description": "Довідник людей, які діяли в організації: слухає ті самі події, що й Activity, плюс користувачів з Auth.",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization-actors.ts",
+        "line": 1
+      },
+      "entity": {
+        "name": "organization_actor",
+        "permissions": [
+          "read"
+        ],
+        "row": {
+          "type": "OrganizationActor",
+          "refs": [
+            "OrganizationActor"
+          ]
+        },
+        "search": [
+          "name"
+        ]
+      }
+    },
+    {
+      "id": "organizations:table:organizations.read_organizations",
+      "kind": "table",
+      "domain": "organizations",
+      "name": "organizations.read_organizations",
+      "label": "read_organizations",
+      "description": "Рядок на організацію: знімок Organization і стан синхронізації. generation дозволяє перебудувати проєкцію поруч зі старою.",
+      "evidence": {
+        "file": "features/organizations/src/lib/organizations.schema.ts",
+        "line": 1
+      },
+      "schema": "organizations",
+      "columns": [
+        {
+          "name": "generation",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        {
+          "name": "organization",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        {
+          "name": "sync",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        }
+      ],
+      "primaryKey": [
+        "generation",
+        "id"
+      ],
+      "indexes": []
+    },
+    {
+      "id": "organizations:table:organizations.activity_role_scopes",
+      "kind": "table",
+      "domain": "organizations",
+      "name": "organizations.activity_role_scopes",
+      "label": "activity_role_scopes",
+      "description": "Допоміжна: у якому scope живе кожна роль, щоб стрічка знала, чию організацію зачіпає подія ролі.",
+      "evidence": {
+        "file": "features/organizations/src/lib/organizations.schema.ts",
+        "line": 1
+      },
+      "schema": "organizations",
+      "columns": [
+        {
+          "name": "generation",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        {
+          "name": "namespace",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        {
+          "name": "roleId",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        {
+          "name": "scope",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        }
+      ],
+      "primaryKey": [
+        "generation",
+        "namespace",
+        "roleId"
+      ],
+      "indexes": []
+    },
+    {
+      "id": "organizations:table:organizations.activity_tag_targets",
+      "kind": "table",
+      "domain": "organizations",
+      "name": "organizations.activity_tag_targets",
+      "label": "activity_tag_targets",
+      "description": "Допоміжна: кого зачіпає зміна тегів у кожному стрімі.",
+      "evidence": {
+        "file": "features/organizations/src/lib/organizations.schema.ts",
+        "line": 1
+      },
+      "schema": "organizations",
+      "columns": [
+        {
+          "name": "generation",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        {
+          "name": "stream",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        {
+          "name": "users",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        }
+      ],
+      "primaryKey": [
+        "generation",
+        "stream"
+      ],
+      "indexes": []
+    },
+    {
+      "id": "organizations:table:organizations.activity_actor_profiles",
+      "kind": "table",
+      "domain": "organizations",
+      "name": "organizations.activity_actor_profiles",
+      "label": "activity_actor_profiles",
+      "description": "Імена всіх синхронізованих користувачів для довідника акторів.",
+      "evidence": {
+        "file": "features/organizations/src/lib/organizations.schema.ts",
+        "line": 1
+      },
+      "schema": "organizations",
+      "columns": [
+        {
+          "name": "generation",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        {
+          "name": "updatedAt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      ],
+      "primaryKey": [
+        "generation",
+        "id"
+      ],
+      "indexes": []
+    },
+    {
+      "id": "organizations:table:organizations.activity_actor_organizations",
+      "kind": "table",
+      "domain": "organizations",
+      "name": "organizations.activity_actor_organizations",
+      "label": "activity_actor_organizations",
+      "description": "У яких організаціях діяв кожен користувач, щоб перейменування оновлювало всі довідники.",
+      "evidence": {
+        "file": "features/organizations/src/lib/organizations.schema.ts",
+        "line": 1
+      },
+      "schema": "organizations",
+      "columns": [
+        {
+          "name": "generation",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        {
+          "name": "userId",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        {
+          "name": "orgId",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        }
+      ],
+      "primaryKey": [
+        "generation",
+        "userId",
+        "orgId"
+      ],
+      "indexes": []
+    },
+    {
+      "id": "organizations:subscription:sync.organizations",
+      "kind": "subscription",
+      "domain": "organizations",
+      "name": "sync.organizations",
+      "label": "sync.organizations",
+      "description": "Живий потік рядків проєкції Organizations для клієнта.",
+      "evidence": {
+        "file": "features/organizations/contracts/src/lib/projection-contracts.ts",
+        "line": 1
+      },
+      "row": {
+        "type": "OrganizationListItem",
+        "refs": [
+          "OrganizationListItem"
+        ]
+      },
+      "path": "/sync/organizations"
+    },
+    {
+      "id": "organizations:subscription:sync.organizations.activity",
+      "kind": "subscription",
+      "domain": "organizations",
+      "name": "sync.organizations.activity",
+      "label": "sync.organizations.activity",
+      "description": "Живий потік стрічки активності. Доступ: organizations.read.",
+      "evidence": {
+        "file": "features/organizations/contracts/src/lib/projection-contracts.ts",
+        "line": 1
+      },
+      "row": {
+        "type": "OrganizationActivity",
+        "refs": [
+          "OrganizationActivity"
+        ]
+      },
+      "path": "/sync/organizations/activity"
+    },
+    {
+      "id": "organizations:subscription:sync.organizations.actors",
+      "kind": "subscription",
+      "domain": "organizations",
+      "name": "sync.organizations.actors",
+      "label": "sync.organizations.actors",
+      "description": "Живий довідник акторів організації.",
+      "evidence": {
+        "file": "features/organizations/contracts/src/lib/projection-contracts.ts",
+        "line": 1
+      },
+      "row": {
+        "type": "OrganizationActor",
+        "refs": [
+          "OrganizationActor"
+        ]
+      },
+      "path": "/sync/organizations/actors"
+    },
+    {
+      "id": "tags:command:tags.create",
+      "kind": "command",
+      "domain": "tags",
+      "name": "tags.create",
+      "label": "create",
+      "evidence": {
+        "file": "features/tags/src/lib/create-tag.ts",
+        "line": 1
+      },
+      "http": {
+        "method": "POST",
+        "path": "/api/tags/create"
+      },
+      "permission": "tags.manage",
+      "input": {
+        "type": "{ scope, name, slug, color, requestId }",
+        "refs": [
+          "AuthorizationScope",
+          "TagColor"
+        ],
+        "fields": [
+          {
+            "name": "scope",
+            "type": "AuthorizationScope",
+            "optional": false,
+            "refs": [
+              "AuthorizationScope"
+            ]
+          },
+          {
+            "name": "name",
+            "type": "string",
+            "optional": false,
+            "note": "1–100",
+            "refs": []
+          },
+          {
+            "name": "slug",
+            "type": "slug",
+            "optional": true,
+            "refs": []
+          },
+          {
+            "name": "color",
+            "type": "TagColor",
+            "optional": false,
+            "note": "default 'slate'",
+            "refs": [
+              "TagColor"
+            ]
+          },
+          {
+            "name": "requestId",
+            "type": "uuidv7",
+            "optional": false,
+            "refs": []
+          }
+        ]
+      },
+      "responses": [
+        {
+          "status": 201,
+          "body": {
+            "type": "Tag",
+            "refs": [
+              "Tag"
+            ]
+          }
+        }
+      ],
+      "errors": {
+        "statuses": [
+          400,
+          403,
+          404,
+          409,
+          503
+        ],
+        "codes": [
+          "permission-denied",
+          "tag-not-found",
+          "tag-slug-conflict",
+          "entity-not-found",
+          "scope-mismatch",
+          "tag-limit-exceeded",
+          "invalid-tag-input",
+          "tags-unavailable",
+          "version-conflict"
+        ]
+      },
+      "appends": [
+        "tags:event:tags.tag-created"
+      ]
+    },
+    {
+      "id": "tags:command:tags.update",
+      "kind": "command",
+      "domain": "tags",
+      "name": "tags.update",
+      "label": "update",
+      "evidence": {
+        "file": "features/tags/src/lib/update-tag.ts",
+        "line": 1
+      },
+      "http": {
+        "method": "POST",
+        "path": "/api/tags/update"
+      },
+      "permission": "tags.manage",
+      "input": {
+        "type": "{ scope, tagId, name, slug, color }",
+        "refs": [
+          "AuthorizationScope",
+          "TagColor"
+        ],
+        "fields": [
+          {
+            "name": "scope",
+            "type": "AuthorizationScope",
+            "optional": false,
+            "refs": [
+              "AuthorizationScope"
+            ]
+          },
+          {
+            "name": "tagId",
+            "type": "uuidv7",
+            "optional": false,
+            "refs": []
+          },
+          {
+            "name": "name",
+            "type": "string",
+            "optional": true,
+            "refs": []
+          },
+          {
+            "name": "slug",
+            "type": "slug",
+            "optional": true,
+            "refs": []
+          },
+          {
+            "name": "color",
+            "type": "TagColor",
+            "optional": true,
+            "refs": [
+              "TagColor"
+            ]
+          }
+        ]
+      },
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "type": "Tag",
+            "refs": [
+              "Tag"
+            ]
+          }
+        }
+      ],
+      "errors": {
+        "statuses": [
+          400,
+          403,
+          404,
+          409,
+          503
+        ],
+        "codes": [
+          "permission-denied",
+          "tag-not-found",
+          "tag-slug-conflict",
+          "entity-not-found",
+          "scope-mismatch",
+          "tag-limit-exceeded",
+          "invalid-tag-input",
+          "tags-unavailable",
+          "version-conflict"
+        ]
+      },
+      "appends": [
+        "tags:event:tags.tag-updated"
+      ]
+    },
+    {
+      "id": "tags:command:tags.delete",
+      "kind": "command",
+      "domain": "tags",
+      "name": "tags.delete",
+      "label": "delete",
+      "evidence": {
+        "file": "features/tags/src/lib/delete-tag.ts",
+        "line": 1
+      },
+      "http": {
+        "method": "POST",
+        "path": "/api/tags/delete"
+      },
+      "permission": "tags.manage",
+      "input": {
+        "type": "{ scope, tagId }",
+        "refs": [
+          "AuthorizationScope"
+        ],
+        "fields": [
+          {
+            "name": "scope",
+            "type": "AuthorizationScope",
+            "optional": false,
+            "refs": [
+              "AuthorizationScope"
+            ]
+          },
+          {
+            "name": "tagId",
+            "type": "uuidv7",
+            "optional": false,
+            "refs": []
+          }
+        ]
+      },
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "type": "{ success, detachedCount }",
+            "refs": [],
+            "fields": [
+              {
+                "name": "success",
+                "type": "true",
+                "optional": false,
+                "refs": []
+              },
+              {
+                "name": "detachedCount",
+                "type": "int ≥ 0",
+                "optional": false,
+                "refs": []
+              }
+            ]
+          }
+        }
+      ],
+      "errors": {
+        "statuses": [
+          400,
+          403,
+          404,
+          409,
+          503
+        ],
+        "codes": [
+          "permission-denied",
+          "tag-not-found",
+          "tag-slug-conflict",
+          "entity-not-found",
+          "scope-mismatch",
+          "tag-limit-exceeded",
+          "invalid-tag-input",
+          "tags-unavailable",
+          "version-conflict"
+        ]
+      },
+      "appends": [
+        "tags:event:tags.tag-deleted"
+      ]
+    },
+    {
+      "id": "tags:command:tags.set-entity-tags",
+      "kind": "command",
+      "domain": "tags",
+      "name": "tags.set-entity-tags",
+      "label": "set-entity-tags",
+      "evidence": {
+        "file": "features/tags/src/lib/set-entity-tags.ts",
+        "line": 1
+      },
+      "http": {
+        "method": "POST",
+        "path": "/api/tags/entity/set"
+      },
+      "permission": "tags.assign",
+      "input": {
+        "type": "{ scope, entity, tagIds }",
+        "refs": [
+          "AuthorizationScope",
+          "EntityRef"
+        ],
+        "fields": [
+          {
+            "name": "scope",
+            "type": "AuthorizationScope",
+            "optional": false,
+            "refs": [
+              "AuthorizationScope"
+            ]
+          },
+          {
+            "name": "entity",
+            "type": "EntityRef",
+            "optional": false,
+            "refs": [
+              "EntityRef"
+            ]
+          },
+          {
+            "name": "tagIds",
+            "type": "uuidv7[]",
+            "optional": false,
+            "note": "≤ 25",
+            "refs": []
+          }
+        ]
+      },
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "type": "{ entity, tags }",
+            "refs": [
+              "EntityRef",
+              "TagSummary"
+            ],
+            "fields": [
+              {
+                "name": "entity",
+                "type": "EntityRef",
+                "optional": false,
+                "refs": [
+                  "EntityRef"
+                ]
+              },
+              {
+                "name": "tags",
+                "type": "TagSummary[]",
+                "optional": false,
+                "refs": [
+                  "TagSummary"
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "errors": {
+        "statuses": [
+          400,
+          403,
+          404,
+          409,
+          503
+        ],
+        "codes": [
+          "permission-denied",
+          "tag-not-found",
+          "tag-slug-conflict",
+          "entity-not-found",
+          "scope-mismatch",
+          "tag-limit-exceeded",
+          "invalid-tag-input",
+          "tags-unavailable",
+          "version-conflict"
+        ]
+      },
+      "appends": [
+        "tags:event:tags.entity-tags-set"
+      ]
+    },
+    {
+      "id": "tags:command:tags.attach-entity-tags",
+      "kind": "command",
+      "domain": "tags",
+      "name": "tags.attach-entity-tags",
+      "label": "attach-entity-tags",
+      "evidence": {
+        "file": "features/tags/src/lib/attach-entity-tags.ts",
+        "line": 1
+      },
+      "http": {
+        "method": "POST",
+        "path": "/api/tags/entity/attach"
+      },
+      "permission": "tags.assign",
+      "input": {
+        "type": "{ scope, entity, tagIds }",
+        "refs": [
+          "AuthorizationScope",
+          "EntityRef"
+        ],
+        "fields": [
+          {
+            "name": "scope",
+            "type": "AuthorizationScope",
+            "optional": false,
+            "refs": [
+              "AuthorizationScope"
+            ]
+          },
+          {
+            "name": "entity",
+            "type": "EntityRef",
+            "optional": false,
+            "refs": [
+              "EntityRef"
+            ]
+          },
+          {
+            "name": "tagIds",
+            "type": "uuidv7[]",
+            "optional": false,
+            "note": "≤ 25",
+            "refs": []
+          }
+        ]
+      },
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "type": "{ entity, tags }",
+            "refs": [
+              "EntityRef",
+              "TagSummary"
+            ],
+            "fields": [
+              {
+                "name": "entity",
+                "type": "EntityRef",
+                "optional": false,
+                "refs": [
+                  "EntityRef"
+                ]
+              },
+              {
+                "name": "tags",
+                "type": "TagSummary[]",
+                "optional": false,
+                "refs": [
+                  "TagSummary"
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "errors": {
+        "statuses": [
+          400,
+          403,
+          404,
+          409,
+          503
+        ],
+        "codes": [
+          "permission-denied",
+          "tag-not-found",
+          "tag-slug-conflict",
+          "entity-not-found",
+          "scope-mismatch",
+          "tag-limit-exceeded",
+          "invalid-tag-input",
+          "tags-unavailable",
+          "version-conflict"
+        ]
+      },
+      "appends": [
+        "tags:event:tags.entity-tags-attached"
+      ]
+    },
+    {
+      "id": "tags:command:tags.detach-entity-tags",
+      "kind": "command",
+      "domain": "tags",
+      "name": "tags.detach-entity-tags",
+      "label": "detach-entity-tags",
+      "evidence": {
+        "file": "features/tags/src/lib/detach-entity-tags.ts",
+        "line": 1
+      },
+      "http": {
+        "method": "POST",
+        "path": "/api/tags/entity/detach"
+      },
+      "permission": "tags.assign",
+      "input": {
+        "type": "{ scope, entity, tagIds }",
+        "refs": [
+          "AuthorizationScope",
+          "EntityRef"
+        ],
+        "fields": [
+          {
+            "name": "scope",
+            "type": "AuthorizationScope",
+            "optional": false,
+            "refs": [
+              "AuthorizationScope"
+            ]
+          },
+          {
+            "name": "entity",
+            "type": "EntityRef",
+            "optional": false,
+            "refs": [
+              "EntityRef"
+            ]
+          },
+          {
+            "name": "tagIds",
+            "type": "uuidv7[]",
+            "optional": false,
+            "note": "≤ 25",
+            "refs": []
+          }
+        ]
+      },
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "type": "{ entity, tags }",
+            "refs": [
+              "EntityRef",
+              "TagSummary"
+            ],
+            "fields": [
+              {
+                "name": "entity",
+                "type": "EntityRef",
+                "optional": false,
+                "refs": [
+                  "EntityRef"
+                ]
+              },
+              {
+                "name": "tags",
+                "type": "TagSummary[]",
+                "optional": false,
+                "refs": [
+                  "TagSummary"
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "errors": {
+        "statuses": [
+          400,
+          403,
+          404,
+          409,
+          503
+        ],
+        "codes": [
+          "permission-denied",
+          "tag-not-found",
+          "tag-slug-conflict",
+          "entity-not-found",
+          "scope-mismatch",
+          "tag-limit-exceeded",
+          "invalid-tag-input",
+          "tags-unavailable",
+          "version-conflict"
+        ]
+      },
+      "appends": [
+        "tags:event:tags.entity-tags-detached"
+      ]
+    },
+    {
+      "id": "tags:query:tags.get",
+      "kind": "query",
+      "domain": "tags",
+      "name": "tags.get",
+      "label": "get",
+      "evidence": {
+        "file": "features/tags/src/lib/get-tag.ts",
+        "line": 1
+      },
+      "http": {
+        "method": "POST",
+        "path": "/api/tags/get"
+      },
+      "permission": "tags.read",
+      "input": {
+        "type": "{ scope, tagId }",
+        "refs": [
+          "AuthorizationScope"
+        ],
+        "fields": [
+          {
+            "name": "scope",
+            "type": "AuthorizationScope",
+            "optional": false,
+            "refs": [
+              "AuthorizationScope"
+            ]
+          },
+          {
+            "name": "tagId",
+            "type": "uuidv7",
+            "optional": false,
+            "refs": []
+          }
+        ]
+      },
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "type": "Tag",
+            "refs": [
+              "Tag"
+            ]
+          }
+        }
+      ],
+      "errors": {
+        "statuses": [
+          400,
+          403,
+          404,
+          409,
+          503
+        ],
+        "codes": [
+          "permission-denied",
+          "tag-not-found",
+          "tag-slug-conflict",
+          "entity-not-found",
+          "scope-mismatch",
+          "tag-limit-exceeded",
+          "invalid-tag-input",
+          "tags-unavailable",
+          "version-conflict"
+        ]
+      }
+    },
+    {
+      "id": "tags:query:tags.list",
+      "kind": "query",
+      "domain": "tags",
+      "name": "tags.list",
+      "label": "list",
+      "evidence": {
+        "file": "features/tags/src/lib/list-tags.ts",
+        "line": 1
+      },
+      "http": {
+        "method": "POST",
+        "path": "/api/tags/list"
+      },
+      "permission": "tags.read",
+      "input": {
+        "type": "{ scope, query, entityType, limit, cursor }",
+        "refs": [
+          "AuthorizationScope"
+        ],
+        "fields": [
+          {
+            "name": "scope",
+            "type": "AuthorizationScope",
+            "optional": false,
+            "refs": [
+              "AuthorizationScope"
+            ]
+          },
+          {
+            "name": "query",
+            "type": "string",
+            "optional": true,
+            "refs": []
+          },
+          {
+            "name": "entityType",
+            "type": "EntityType",
+            "optional": true,
+            "refs": []
+          },
+          {
+            "name": "limit",
+            "type": "int",
+            "optional": false,
+            "note": "1–200, default 50",
+            "refs": []
+          },
+          {
+            "name": "cursor",
+            "type": "string",
+            "optional": true,
+            "refs": []
+          }
+        ]
+      },
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "type": "{ items, nextCursor }",
+            "refs": [
+              "Tag"
+            ],
+            "fields": [
+              {
+                "name": "items",
+                "type": "Tag[]",
+                "optional": false,
+                "refs": [
+                  "Tag"
+                ]
+              },
+              {
+                "name": "nextCursor",
+                "type": "string",
+                "optional": true,
+                "refs": []
+              }
+            ]
+          }
+        }
+      ],
+      "errors": {
+        "statuses": [
+          400,
+          403,
+          404,
+          409,
+          503
+        ],
+        "codes": [
+          "permission-denied",
+          "tag-not-found",
+          "tag-slug-conflict",
+          "entity-not-found",
+          "scope-mismatch",
+          "tag-limit-exceeded",
+          "invalid-tag-input",
+          "tags-unavailable",
+          "version-conflict"
+        ]
+      }
+    },
+    {
+      "id": "tags:query:tags.get-entity-tags",
+      "kind": "query",
+      "domain": "tags",
+      "name": "tags.get-entity-tags",
+      "label": "get-entity-tags",
+      "evidence": {
+        "file": "features/tags/src/lib/get-entity-tags.ts",
+        "line": 1
+      },
+      "http": {
+        "method": "POST",
+        "path": "/api/tags/entity/get"
+      },
+      "permission": "tags.read",
+      "input": {
+        "type": "{ scope, entity }",
+        "refs": [
+          "AuthorizationScope",
+          "EntityRef"
+        ],
+        "fields": [
+          {
+            "name": "scope",
+            "type": "AuthorizationScope",
+            "optional": false,
+            "refs": [
+              "AuthorizationScope"
+            ]
+          },
+          {
+            "name": "entity",
+            "type": "EntityRef",
+            "optional": false,
+            "refs": [
+              "EntityRef"
+            ]
+          }
+        ]
+      },
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "type": "{ entity, tags }",
+            "refs": [
+              "EntityRef",
+              "Tag"
+            ],
+            "fields": [
+              {
+                "name": "entity",
+                "type": "EntityRef",
+                "optional": false,
+                "refs": [
+                  "EntityRef"
+                ]
+              },
+              {
+                "name": "tags",
+                "type": "Tag[]",
+                "optional": false,
+                "refs": [
+                  "Tag"
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "errors": {
+        "statuses": [
+          400,
+          403,
+          404,
+          409,
+          503
+        ],
+        "codes": [
+          "permission-denied",
+          "tag-not-found",
+          "tag-slug-conflict",
+          "entity-not-found",
+          "scope-mismatch",
+          "tag-limit-exceeded",
+          "invalid-tag-input",
+          "tags-unavailable",
+          "version-conflict"
+        ]
+      }
+    },
+    {
+      "id": "tags:query:tags.batch-get-entity-tags",
+      "kind": "query",
+      "domain": "tags",
+      "name": "tags.batch-get-entity-tags",
+      "label": "batch-get-entity-tags",
+      "evidence": {
+        "file": "features/tags/src/lib/batch-get-entity-tags.ts",
+        "line": 1
+      },
+      "http": {
+        "method": "POST",
+        "path": "/api/tags/entities/batch-get"
+      },
+      "permission": "tags.read",
+      "input": {
+        "type": "{ scope, entities }",
+        "refs": [
+          "AuthorizationScope",
+          "EntityRef"
+        ],
+        "fields": [
+          {
+            "name": "scope",
+            "type": "AuthorizationScope",
+            "optional": false,
+            "refs": [
+              "AuthorizationScope"
+            ]
+          },
+          {
+            "name": "entities",
+            "type": "EntityRef[]",
+            "optional": false,
+            "note": "1–100",
+            "refs": [
+              "EntityRef"
+            ]
+          }
+        ]
+      },
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "type": "{ results }",
+            "refs": [],
+            "fields": [
+              {
+                "name": "results",
+                "type": "{ entity, tags: TagSummary[] }[]",
+                "optional": false,
+                "refs": []
+              }
+            ]
+          }
+        }
+      ],
+      "errors": {
+        "statuses": [
+          400,
+          403,
+          404,
+          409,
+          503
+        ],
+        "codes": [
+          "permission-denied",
+          "tag-not-found",
+          "tag-slug-conflict",
+          "entity-not-found",
+          "scope-mismatch",
+          "tag-limit-exceeded",
+          "invalid-tag-input",
+          "tags-unavailable",
+          "version-conflict"
+        ]
+      }
+    },
+    {
+      "id": "tags:query:tags.search-entities",
+      "kind": "query",
+      "domain": "tags",
+      "name": "tags.search-entities",
+      "label": "search-entities",
+      "evidence": {
+        "file": "features/tags/src/lib/search-entities.ts",
+        "line": 1
+      },
+      "http": {
+        "method": "POST",
+        "path": "/api/tags/entities/search"
+      },
+      "permission": "tags.read",
+      "input": {
+        "type": "{ scope, tagIds, matchMode, entityType, limit }",
+        "refs": [
+          "AuthorizationScope"
+        ],
+        "fields": [
+          {
+            "name": "scope",
+            "type": "AuthorizationScope",
+            "optional": false,
+            "refs": [
+              "AuthorizationScope"
+            ]
+          },
+          {
+            "name": "tagIds",
+            "type": "uuidv7[]",
+            "optional": false,
+            "note": "1–10",
+            "refs": []
+          },
+          {
+            "name": "matchMode",
+            "type": "'all' | 'any'",
+            "optional": false,
+            "note": "default 'all'",
+            "refs": []
+          },
+          {
+            "name": "entityType",
+            "type": "EntityType",
+            "optional": true,
+            "refs": []
+          },
+          {
+            "name": "limit",
+            "type": "int",
+            "optional": false,
+            "note": "1–100",
+            "refs": []
+          }
+        ]
+      },
+      "responses": [
+        {
+          "status": 200,
+          "body": {
+            "type": "{ entities, total }",
+            "refs": [
+              "EntityRef"
+            ],
+            "fields": [
+              {
+                "name": "entities",
+                "type": "EntityRef[]",
+                "optional": false,
+                "refs": [
+                  "EntityRef"
+                ]
+              },
+              {
+                "name": "total",
+                "type": "int ≥ 0",
+                "optional": false,
+                "refs": []
+              }
+            ]
+          }
+        }
+      ],
+      "errors": {
+        "statuses": [
+          400,
+          403,
+          404,
+          409,
+          503
+        ],
+        "codes": [
+          "permission-denied",
+          "tag-not-found",
+          "tag-slug-conflict",
+          "entity-not-found",
+          "scope-mismatch",
+          "tag-limit-exceeded",
+          "invalid-tag-input",
+          "tags-unavailable",
+          "version-conflict"
+        ]
+      }
+    },
+    {
+      "id": "tags:aggregate:TagCatalog",
+      "kind": "aggregate",
+      "domain": "tags",
+      "name": "TagCatalog",
+      "label": "TagCatalog",
+      "description": "Один стрім на scope (платформа або організація). Тримає всі теги і всі їхні прив’язки до сутностей.",
+      "evidence": {
+        "file": "features/tags/src/lib/tags.aggregate.ts",
+        "line": 1
+      },
+      "state": {
+        "type": "TagScopeState",
+        "refs": [
+          "TagScopeState"
+        ]
+      },
+      "storage": {
+        "kind": "event-store",
+        "stream": "TagCatalog",
+        "snapshot": true
+      }
+    },
+    {
+      "id": "tags:event:tags.tag-created",
+      "kind": "event",
+      "domain": "tags",
+      "name": "tags.tag-created",
+      "label": "tag-created",
+      "evidence": {
+        "file": "features/tags/contracts/src/lib/tags-contracts.ts",
+        "line": 1
+      },
+      "payload": {
+        "type": "{ tag }",
+        "refs": [
+          "Tag"
+        ],
+        "fields": [
+          {
+            "name": "tag",
+            "type": "Tag",
+            "optional": false,
+            "refs": [
+              "Tag"
+            ]
+          }
+        ]
+      },
+      "schemaVersion": 1
+    },
+    {
+      "id": "tags:event:tags.tag-updated",
+      "kind": "event",
+      "domain": "tags",
+      "name": "tags.tag-updated",
+      "label": "tag-updated",
+      "evidence": {
+        "file": "features/tags/contracts/src/lib/tags-contracts.ts",
+        "line": 1
+      },
+      "payload": {
+        "type": "{ tag }",
+        "refs": [
+          "Tag"
+        ],
+        "fields": [
+          {
+            "name": "tag",
+            "type": "Tag",
+            "optional": false,
+            "refs": [
+              "Tag"
+            ]
+          }
+        ]
+      },
+      "schemaVersion": 1
+    },
+    {
+      "id": "tags:event:tags.tag-deleted",
+      "kind": "event",
+      "domain": "tags",
+      "name": "tags.tag-deleted",
+      "label": "tag-deleted",
+      "evidence": {
+        "file": "features/tags/contracts/src/lib/tags-contracts.ts",
+        "line": 1
+      },
+      "payload": {
+        "type": "{ tagId, scope }",
+        "refs": [
+          "AuthorizationScope"
+        ],
+        "fields": [
+          {
+            "name": "tagId",
+            "type": "uuidv7",
+            "optional": false,
+            "refs": []
+          },
+          {
+            "name": "scope",
+            "type": "AuthorizationScope",
+            "optional": false,
+            "refs": [
+              "AuthorizationScope"
+            ]
+          }
+        ]
+      },
+      "schemaVersion": 1
+    },
+    {
+      "id": "tags:event:tags.entity-tags-set",
+      "kind": "event",
+      "domain": "tags",
+      "name": "tags.entity-tags-set",
+      "label": "entity-tags-set",
+      "evidence": {
+        "file": "features/tags/contracts/src/lib/tags-contracts.ts",
+        "line": 1
+      },
+      "payload": {
+        "type": "{ scope, entity, tagIds, assignedBy, assignedAt }",
+        "refs": [
+          "AuthorizationScope",
+          "EntityRef"
+        ],
+        "fields": [
+          {
+            "name": "scope",
+            "type": "AuthorizationScope",
+            "optional": false,
+            "refs": [
+              "AuthorizationScope"
+            ]
+          },
+          {
+            "name": "entity",
+            "type": "EntityRef",
+            "optional": false,
+            "refs": [
+              "EntityRef"
+            ]
+          },
+          {
+            "name": "tagIds",
+            "type": "uuidv7[]",
+            "optional": false,
+            "refs": []
+          },
+          {
+            "name": "assignedBy",
+            "type": "string | null",
+            "optional": true,
+            "refs": []
+          },
+          {
+            "name": "assignedAt",
+            "type": "datetime",
+            "optional": false,
+            "refs": []
+          }
+        ]
+      },
+      "schemaVersion": 1
+    },
+    {
+      "id": "tags:event:tags.entity-tags-attached",
+      "kind": "event",
+      "domain": "tags",
+      "name": "tags.entity-tags-attached",
+      "label": "entity-tags-attached",
+      "evidence": {
+        "file": "features/tags/contracts/src/lib/tags-contracts.ts",
+        "line": 1
+      },
+      "payload": {
+        "type": "{ scope, entity, tagIds, assignedBy, assignedAt }",
+        "refs": [
+          "AuthorizationScope",
+          "EntityRef"
+        ],
+        "fields": [
+          {
+            "name": "scope",
+            "type": "AuthorizationScope",
+            "optional": false,
+            "refs": [
+              "AuthorizationScope"
+            ]
+          },
+          {
+            "name": "entity",
+            "type": "EntityRef",
+            "optional": false,
+            "refs": [
+              "EntityRef"
+            ]
+          },
+          {
+            "name": "tagIds",
+            "type": "uuidv7[]",
+            "optional": false,
+            "refs": []
+          },
+          {
+            "name": "assignedBy",
+            "type": "string | null",
+            "optional": true,
+            "refs": []
+          },
+          {
+            "name": "assignedAt",
+            "type": "datetime",
+            "optional": false,
+            "refs": []
+          }
+        ]
+      },
+      "schemaVersion": 1
+    },
+    {
+      "id": "tags:event:tags.entity-tags-detached",
+      "kind": "event",
+      "domain": "tags",
+      "name": "tags.entity-tags-detached",
+      "label": "entity-tags-detached",
+      "evidence": {
+        "file": "features/tags/contracts/src/lib/tags-contracts.ts",
+        "line": 1
+      },
+      "payload": {
+        "type": "{ scope, entity, tagIds }",
+        "refs": [
+          "AuthorizationScope",
+          "EntityRef"
+        ],
+        "fields": [
+          {
+            "name": "scope",
+            "type": "AuthorizationScope",
+            "optional": false,
+            "refs": [
+              "AuthorizationScope"
+            ]
+          },
+          {
+            "name": "entity",
+            "type": "EntityRef",
+            "optional": false,
+            "refs": [
+              "EntityRef"
+            ]
+          },
+          {
+            "name": "tagIds",
+            "type": "uuidv7[]",
+            "optional": false,
+            "refs": []
+          }
+        ]
+      },
+      "schemaVersion": 1
+    },
+    {
+      "id": "tags:projection:tags.tags",
+      "kind": "projection",
+      "domain": "tags",
+      "name": "tags.tags",
+      "label": "Tags",
+      "description": "Визначення тегів для списків і пошуку.",
+      "evidence": {
+        "file": "features/tags/src/lib/tag.entities.ts",
+        "line": 1
+      },
+      "entity": {
+        "name": "tag",
+        "permissions": [
+          "read",
+          "create",
+          "update",
+          "delete"
+        ],
+        "row": {
+          "type": "Tag",
+          "refs": [
+            "Tag"
+          ]
+        },
+        "consumer": "tags-projections-tags-entities-4"
+      }
+    },
+    {
+      "id": "tags:projection:tags.entity_tags",
+      "kind": "projection",
+      "domain": "tags",
+      "name": "tags.entity_tags",
+      "label": "Entity tags",
+      "description": "Які теги висять на яких сутностях. Прибирає прив’язки, коли тег видалено.",
+      "evidence": {
+        "file": "features/tags/src/lib/tag.entities.ts",
+        "line": 1
+      },
+      "entity": {
+        "name": "entity_tag_assignment",
+        "permissions": [
+          "read",
+          "create",
+          "delete"
+        ],
+        "row": {
+          "type": "EntityTagListItem",
+          "refs": [
+            "EntityTagListItem"
+          ]
+        },
+        "consumer": "tags-projections-entity-tags-entities-4"
+      }
+    },
+    {
+      "id": "tags:table:tags.definitions",
+      "kind": "table",
+      "domain": "tags",
+      "name": "tags.definitions",
+      "label": "definitions",
+      "description": "Визначення тегів: рядок на тег у кожному scope, значення лежить у value як Tag.",
+      "evidence": {
+        "file": "features/tags/src/lib/tags.schema.ts",
+        "line": 1
+      },
+      "schema": "tags",
+      "columns": [
+        {
+          "name": "generation",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        {
+          "name": "scope_key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        {
+          "name": "value",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        }
+      ],
+      "primaryKey": [
+        "generation",
+        "scope_key",
+        "id"
+      ],
+      "indexes": []
+    },
+    {
+      "id": "tags:table:tags.assignments",
+      "kind": "table",
+      "domain": "tags",
+      "name": "tags.assignments",
+      "label": "assignments",
+      "description": "Прив’язки тегів до сутностей: рядок на пару сутність + тег.",
+      "evidence": {
+        "file": "features/tags/src/lib/tags.schema.ts",
+        "line": 1
+      },
+      "schema": "tags",
+      "columns": [
+        {
+          "name": "owner",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        {
+          "name": "generation",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        {
+          "name": "scope_key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        {
+          "name": "entity_type",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        {
+          "name": "entity_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        {
+          "name": "tag_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        {
+          "name": "value",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        }
+      ],
+      "primaryKey": [
+        "owner",
+        "generation",
+        "scope_key",
+        "entity_type",
+        "entity_id",
+        "tag_id"
+      ],
+      "indexes": [
+        {
+          "name": "assignments_tag",
+          "columns": [
+            "owner",
+            "generation",
+            "scope_key",
+            "tag_id"
+          ],
+          "unique": false
+        }
+      ]
+    },
+    {
+      "id": "tags:subscription:sync.tags",
+      "kind": "subscription",
+      "domain": "tags",
+      "name": "sync.tags",
+      "label": "sync.tags",
+      "description": "Живий потік визначень тегів.",
+      "evidence": {
+        "file": "features/tags/contracts/src/lib/projection-contracts.ts",
+        "line": 1
+      },
+      "row": {
+        "type": "Tag",
+        "refs": [
+          "Tag"
+        ]
+      },
+      "path": "/sync/tags"
+    },
+    {
+      "id": "tags:subscription:sync.tags.entity_tags",
+      "kind": "subscription",
+      "domain": "tags",
+      "name": "sync.tags.entity_tags",
+      "label": "sync.tags.entity_tags",
+      "description": "Живий потік прив’язок тегів.",
+      "evidence": {
+        "file": "features/tags/contracts/src/lib/projection-contracts.ts",
+        "line": 1
+      },
+      "row": {
+        "type": "EntityTagListItem",
+        "refs": [
+          "EntityTagListItem"
+        ]
+      },
+      "path": "/sync/tags/entity-tags"
+    },
+    {
+      "id": "external:external:zitadel",
+      "kind": "external",
+      "domain": null,
+      "name": "ZITADEL",
+      "label": "ZITADEL",
+      "description": "Identity provider. Організації створюються й синхронізуються там.",
+      "evidence": {
+        "file": "docs/externals",
+        "line": 1
+      },
+      "system": "system"
+    },
+    {
+      "id": "external:external:domain.roles",
+      "kind": "external",
+      "domain": null,
+      "name": "Roles",
+      "label": "Roles",
+      "description": "Ролі, призначення і політики доступу. Згорнутий: відкриється, коли його дослідити.",
+      "evidence": {
+        "file": "features/roles",
+        "line": 1
+      },
+      "system": "domain"
+    },
+    {
+      "id": "external:external:domain.auth",
+      "kind": "external",
+      "domain": null,
+      "name": "Auth",
+      "label": "Auth",
+      "description": "Вхід, користувачі і їхня стрічка активності. Згорнутий.",
+      "evidence": {
+        "file": "features/auth",
+        "line": 1
+      },
+      "system": "domain"
+    }
+  ],
+  "edges": [
+    {
+      "source": "organizations:command:organizations.create",
+      "target": "organizations:aggregate:OrganizationProvisioning",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/create-organization.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:command:organizations.create",
+      "target": "organizations:aggregate:OrganizationRegistry",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/create-organization.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:command:organizations.create",
+      "target": "organizations:aggregate:OrganizationSlug",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/create-organization.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:command:organizations.update",
+      "target": "organizations:aggregate:Organization",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/update-organization.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:command:organizations.update",
+      "target": "organizations:aggregate:OrganizationSlug",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/update-organization.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:command:organizations.update",
+      "target": "organizations:aggregate:OrganizationSync",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/update-organization.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:command:organizations.update",
+      "target": "organizations:aggregate:OrganizationReceipt",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/update-organization.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:command:organizations.suspend",
+      "target": "organizations:aggregate:Organization",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/suspend-organization.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:command:organizations.resume",
+      "target": "organizations:aggregate:Organization",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/resume-organization.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:command:organizations.archive",
+      "target": "organizations:aggregate:Organization",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/archive-organization.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:command:organizations.unarchive",
+      "target": "organizations:aggregate:Organization",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/unarchive-organization.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:command:organizations.logo.publish",
+      "target": "organizations:aggregate:Organization",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization-logo.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:command:organizations.logo.remove",
+      "target": "organizations:aggregate:Organization",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization-logo.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:command:organizations.suspend",
+      "target": "organizations:aggregate:OrganizationSync",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/suspend-organization.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:command:organizations.resume",
+      "target": "organizations:aggregate:OrganizationSync",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/resume-organization.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:command:organizations.archive",
+      "target": "organizations:aggregate:OrganizationSync",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/archive-organization.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:command:organizations.unarchive",
+      "target": "organizations:aggregate:OrganizationSync",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/unarchive-organization.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:command:organizations.logo.publish",
+      "target": "organizations:aggregate:OrganizationSync",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization-logo.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:command:organizations.logo.remove",
+      "target": "organizations:aggregate:OrganizationSync",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization-logo.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:command:organizations.suspend",
+      "target": "organizations:aggregate:OrganizationReceipt",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/suspend-organization.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:command:organizations.resume",
+      "target": "organizations:aggregate:OrganizationReceipt",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/resume-organization.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:command:organizations.archive",
+      "target": "organizations:aggregate:OrganizationReceipt",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/archive-organization.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:command:organizations.unarchive",
+      "target": "organizations:aggregate:OrganizationReceipt",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/unarchive-organization.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:command:organizations.logo.publish",
+      "target": "organizations:aggregate:OrganizationReceipt",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization-logo.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:command:organizations.logo.remove",
+      "target": "organizations:aggregate:OrganizationReceipt",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization-logo.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:command:organizations.provisioning.retry",
+      "target": "organizations:aggregate:Organization",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/provision-organization.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:command:organizations.provisioning.retry",
+      "target": "organizations:aggregate:OrganizationProvisioning",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/provision-organization.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:command:organizations.provisioning.retry",
+      "target": "organizations:aggregate:OrganizationRegistry",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/provision-organization.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:command:organizations.provisioning.retry",
+      "target": "organizations:aggregate:OrganizationSync",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/provision-organization.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:worker:provisioning resume",
+      "target": "organizations:aggregate:Organization",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/organizations.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:worker:provisioning resume",
+      "target": "organizations:aggregate:OrganizationProvisioning",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/organizations.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:worker:provisioning resume",
+      "target": "organizations:aggregate:OrganizationRegistry",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/organizations.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:worker:provisioning resume",
+      "target": "organizations:aggregate:OrganizationSync",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/organizations.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:worker:zitadel sync",
+      "target": "organizations:aggregate:OrganizationSync",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/synchronize-organization.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:worker:adopt organizations",
+      "target": "organizations:aggregate:OrganizationRegistry",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/adopt-organizations.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:worker:adopt organizations",
+      "target": "organizations:aggregate:Organization",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/adopt-organizations.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:worker:slug backfill",
+      "target": "organizations:aggregate:OrganizationSlug",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/backfill-organization-slugs.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:worker:slug backfill",
+      "target": "organizations:aggregate:OrganizationSlugMigration",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/organizations/src/lib/backfill-organization-slugs.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:aggregate:Organization",
+      "target": "organizations:event:organizations.changed",
+      "kind": "emits",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization.aggregates.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:aggregate:OrganizationSync",
+      "target": "organizations:event:organizations.sync-changed",
+      "kind": "emits",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization.aggregates.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:aggregate:OrganizationReceipt",
+      "target": "organizations:event:organizations.receipt-recorded",
+      "kind": "emits",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization.aggregates.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:aggregate:OrganizationSlug",
+      "target": "organizations:event:organizations.slug-changed",
+      "kind": "emits",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization.aggregates.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:aggregate:OrganizationProvisioning",
+      "target": "organizations:event:organizations.provisioning-changed",
+      "kind": "emits",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization.aggregates.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:aggregate:OrganizationRegistry",
+      "target": "organizations:event:organizations.registry-changed",
+      "kind": "emits",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization.aggregates.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:aggregate:OrganizationSlugMigration",
+      "target": "organizations:event:organizations.slugs-backfilled",
+      "kind": "emits",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization.aggregates.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:event:organizations.changed",
+      "target": "organizations:projection:organizations.organizations",
+      "kind": "handles",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization.entities.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:event:organizations.sync-changed",
+      "target": "organizations:projection:organizations.organizations",
+      "kind": "handles",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization.entities.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:event:organizations.changed",
+      "target": "organizations:projection:organizations.activity",
+      "kind": "handles",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization-activity.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:event:organizations.changed",
+      "target": "organizations:projection:organizations.actors",
+      "kind": "handles",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization-actors.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:event:organizations.changed",
+      "target": "external:external:domain.auth",
+      "kind": "handles",
+      "evidence": {
+        "file": "features/auth",
+        "line": 1
+      }
+    },
+    {
+      "source": "external:external:domain.roles",
+      "target": "organizations:projection:organizations.activity",
+      "kind": "handles",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization-activity.ts",
+        "line": 1
+      },
+      "count": 13,
+      "label": "RoleCreated, RoleImported, RoleDetailsUpdated, RolePermissionsChanged, RoleArchived, RoleUnarchived, RoleAssigned, RoleRevoked, OrganizationMemberAdded, OrganizationMemberSuspended, OrganizationMemberRestored, OrganizationMemberRemoved, PolicyChanged"
+    },
+    {
+      "source": "external:external:domain.roles",
+      "target": "organizations:projection:organizations.actors",
+      "kind": "handles",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization-actors.ts",
+        "line": 1
+      },
+      "count": 13,
+      "label": "RoleCreated, RoleImported, RoleDetailsUpdated, RolePermissionsChanged, RoleArchived, RoleUnarchived, RoleAssigned, RoleRevoked, OrganizationMemberAdded, OrganizationMemberSuspended, OrganizationMemberRestored, OrganizationMemberRemoved, PolicyChanged"
+    },
+    {
+      "source": "external:external:domain.auth",
+      "target": "organizations:projection:organizations.actors",
+      "kind": "handles",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization-actors.ts",
+        "line": 1
+      },
+      "count": 2,
+      "label": "UserSynchronized, UserDeleted"
+    },
+    {
+      "source": "organizations:projection:organizations.organizations",
+      "target": "organizations:table:organizations.read_organizations",
+      "kind": "writes",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization.entities.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:projection:organizations.activity",
+      "target": "organizations:table:organizations.activity_role_scopes",
+      "kind": "writes",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization-activity.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:projection:organizations.activity",
+      "target": "organizations:table:organizations.activity_tag_targets",
+      "kind": "writes",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization-activity.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:projection:organizations.actors",
+      "target": "organizations:table:organizations.activity_actor_profiles",
+      "kind": "writes",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization-actors.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:projection:organizations.actors",
+      "target": "organizations:table:organizations.activity_actor_organizations",
+      "kind": "writes",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization-actors.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:projection:organizations.organizations",
+      "target": "organizations:subscription:sync.organizations",
+      "kind": "streams",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization.entities.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:projection:organizations.activity",
+      "target": "organizations:subscription:sync.organizations.activity",
+      "kind": "streams",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization-activity.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:projection:organizations.actors",
+      "target": "organizations:subscription:sync.organizations.actors",
+      "kind": "streams",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization-actors.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:aggregate:Organization",
+      "target": "organizations:query:organizations.get",
+      "kind": "reads",
+      "evidence": {
+        "file": "features/organizations/src/lib/organizations.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:aggregate:OrganizationSync",
+      "target": "organizations:query:organizations.get",
+      "kind": "reads",
+      "evidence": {
+        "file": "features/organizations/src/lib/organizations.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:aggregate:Organization",
+      "target": "organizations:query:organizations.resolve-brand",
+      "kind": "reads",
+      "evidence": {
+        "file": "features/organizations/src/lib/organizations.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:aggregate:Organization",
+      "target": "organizations:query:organizations.check-lifecycle",
+      "kind": "reads",
+      "evidence": {
+        "file": "features/organizations/src/lib/organizations.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:aggregate:OrganizationSlug",
+      "target": "organizations:query:organizations.check-slug",
+      "kind": "reads",
+      "evidence": {
+        "file": "features/organizations/src/lib/organizations.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:aggregate:OrganizationSlug",
+      "target": "organizations:query:organizations.resolve-slug",
+      "kind": "reads",
+      "evidence": {
+        "file": "features/organizations/src/lib/resolve-organization-slug.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:aggregate:Organization",
+      "target": "organizations:query:organizations.resolve-slug",
+      "kind": "reads",
+      "evidence": {
+        "file": "features/organizations/src/lib/resolve-organization-slug.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:aggregate:OrganizationProvisioning",
+      "target": "organizations:query:organizations.provisioning.get",
+      "kind": "reads",
+      "evidence": {
+        "file": "features/organizations/src/lib/get-organization-provisioning.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:aggregate:OrganizationProvisioning",
+      "target": "organizations:query:organizations.check-provisioning",
+      "kind": "reads",
+      "evidence": {
+        "file": "features/organizations/src/lib/get-organization-provisioning.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:aggregate:OrganizationRegistry",
+      "target": "organizations:query:organizations.registered",
+      "kind": "reads",
+      "evidence": {
+        "file": "features/organizations/src/lib/organizations.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:table:organizations.read_organizations",
+      "target": "organizations:query:organizations.list-mine",
+      "kind": "reads",
+      "evidence": {
+        "file": "features/organizations/src/lib/list-my-organizations.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:query:organizations.list-mine",
+      "target": "external:external:domain.roles",
+      "kind": "calls",
+      "evidence": {
+        "file": "features/organizations/src/lib/list-my-organizations.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "external:external:domain.auth",
+      "target": "organizations:query:organizations.registered",
+      "kind": "calls",
+      "evidence": {
+        "file": "features/organizations/src/lib/organizations.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "external:external:domain.auth",
+      "target": "organizations:query:organizations.resolve-brand",
+      "kind": "calls",
+      "evidence": {
+        "file": "features/organizations/src/lib/organizations.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:command:organizations.provisioning.retry",
+      "target": "external:external:zitadel",
+      "kind": "calls",
+      "evidence": {
+        "file": "features/organizations/src/lib/provision-organization.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:worker:provisioning resume",
+      "target": "external:external:zitadel",
+      "kind": "calls",
+      "evidence": {
+        "file": "features/organizations/src/lib/organizations.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "organizations:worker:zitadel sync",
+      "target": "external:external:zitadel",
+      "kind": "calls",
+      "evidence": {
+        "file": "features/organizations/src/lib/synchronize-organization.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:command:tags.create",
+      "target": "tags:aggregate:TagCatalog",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/tags/src/lib/create-tag.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:command:tags.update",
+      "target": "tags:aggregate:TagCatalog",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/tags/src/lib/update-tag.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:command:tags.delete",
+      "target": "tags:aggregate:TagCatalog",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/tags/src/lib/delete-tag.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:command:tags.set-entity-tags",
+      "target": "tags:aggregate:TagCatalog",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/tags/src/lib/set-entity-tags.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:command:tags.attach-entity-tags",
+      "target": "tags:aggregate:TagCatalog",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/tags/src/lib/attach-entity-tags.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:command:tags.detach-entity-tags",
+      "target": "tags:aggregate:TagCatalog",
+      "kind": "decides",
+      "evidence": {
+        "file": "features/tags/src/lib/detach-entity-tags.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:aggregate:TagCatalog",
+      "target": "tags:event:tags.tag-created",
+      "kind": "emits",
+      "evidence": {
+        "file": "features/tags/src/lib/tags.aggregate.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:aggregate:TagCatalog",
+      "target": "tags:event:tags.tag-updated",
+      "kind": "emits",
+      "evidence": {
+        "file": "features/tags/src/lib/tags.aggregate.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:aggregate:TagCatalog",
+      "target": "tags:event:tags.tag-deleted",
+      "kind": "emits",
+      "evidence": {
+        "file": "features/tags/src/lib/tags.aggregate.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:aggregate:TagCatalog",
+      "target": "tags:event:tags.entity-tags-set",
+      "kind": "emits",
+      "evidence": {
+        "file": "features/tags/src/lib/tags.aggregate.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:aggregate:TagCatalog",
+      "target": "tags:event:tags.entity-tags-attached",
+      "kind": "emits",
+      "evidence": {
+        "file": "features/tags/src/lib/tags.aggregate.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:aggregate:TagCatalog",
+      "target": "tags:event:tags.entity-tags-detached",
+      "kind": "emits",
+      "evidence": {
+        "file": "features/tags/src/lib/tags.aggregate.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:event:tags.tag-created",
+      "target": "tags:projection:tags.tags",
+      "kind": "handles",
+      "evidence": {
+        "file": "features/tags/src/lib/tag.entities.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:event:tags.tag-updated",
+      "target": "tags:projection:tags.tags",
+      "kind": "handles",
+      "evidence": {
+        "file": "features/tags/src/lib/tag.entities.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:event:tags.tag-deleted",
+      "target": "tags:projection:tags.tags",
+      "kind": "handles",
+      "evidence": {
+        "file": "features/tags/src/lib/tag.entities.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:event:tags.entity-tags-set",
+      "target": "tags:projection:tags.entity_tags",
+      "kind": "handles",
+      "evidence": {
+        "file": "features/tags/src/lib/tag.entities.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:event:tags.entity-tags-attached",
+      "target": "tags:projection:tags.entity_tags",
+      "kind": "handles",
+      "evidence": {
+        "file": "features/tags/src/lib/tag.entities.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:event:tags.entity-tags-detached",
+      "target": "tags:projection:tags.entity_tags",
+      "kind": "handles",
+      "evidence": {
+        "file": "features/tags/src/lib/tag.entities.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:event:tags.tag-deleted",
+      "target": "tags:projection:tags.entity_tags",
+      "kind": "handles",
+      "evidence": {
+        "file": "features/tags/src/lib/tag.entities.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:event:tags.tag-created",
+      "target": "organizations:projection:organizations.activity",
+      "kind": "handles",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization-activity.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:event:tags.tag-created",
+      "target": "organizations:projection:organizations.actors",
+      "kind": "handles",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization-actors.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:event:tags.tag-created",
+      "target": "external:external:domain.auth",
+      "kind": "handles",
+      "evidence": {
+        "file": "features/auth",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:event:tags.tag-updated",
+      "target": "organizations:projection:organizations.activity",
+      "kind": "handles",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization-activity.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:event:tags.tag-updated",
+      "target": "organizations:projection:organizations.actors",
+      "kind": "handles",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization-actors.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:event:tags.tag-updated",
+      "target": "external:external:domain.auth",
+      "kind": "handles",
+      "evidence": {
+        "file": "features/auth",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:event:tags.tag-deleted",
+      "target": "organizations:projection:organizations.activity",
+      "kind": "handles",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization-activity.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:event:tags.tag-deleted",
+      "target": "organizations:projection:organizations.actors",
+      "kind": "handles",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization-actors.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:event:tags.tag-deleted",
+      "target": "external:external:domain.auth",
+      "kind": "handles",
+      "evidence": {
+        "file": "features/auth",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:event:tags.entity-tags-set",
+      "target": "organizations:projection:organizations.activity",
+      "kind": "handles",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization-activity.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:event:tags.entity-tags-set",
+      "target": "organizations:projection:organizations.actors",
+      "kind": "handles",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization-actors.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:event:tags.entity-tags-set",
+      "target": "external:external:domain.auth",
+      "kind": "handles",
+      "evidence": {
+        "file": "features/auth",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:event:tags.entity-tags-attached",
+      "target": "organizations:projection:organizations.activity",
+      "kind": "handles",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization-activity.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:event:tags.entity-tags-attached",
+      "target": "organizations:projection:organizations.actors",
+      "kind": "handles",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization-actors.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:event:tags.entity-tags-attached",
+      "target": "external:external:domain.auth",
+      "kind": "handles",
+      "evidence": {
+        "file": "features/auth",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:event:tags.entity-tags-detached",
+      "target": "organizations:projection:organizations.activity",
+      "kind": "handles",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization-activity.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:event:tags.entity-tags-detached",
+      "target": "organizations:projection:organizations.actors",
+      "kind": "handles",
+      "evidence": {
+        "file": "features/organizations/src/lib/organization-actors.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:event:tags.entity-tags-detached",
+      "target": "external:external:domain.auth",
+      "kind": "handles",
+      "evidence": {
+        "file": "features/auth",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:projection:tags.tags",
+      "target": "tags:table:tags.definitions",
+      "kind": "writes",
+      "evidence": {
+        "file": "features/tags/src/lib/tag.entities.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:projection:tags.entity_tags",
+      "target": "tags:table:tags.assignments",
+      "kind": "writes",
+      "evidence": {
+        "file": "features/tags/src/lib/tag.entities.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:projection:tags.tags",
+      "target": "tags:subscription:sync.tags",
+      "kind": "streams",
+      "evidence": {
+        "file": "features/tags/src/lib/tag.entities.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:projection:tags.entity_tags",
+      "target": "tags:subscription:sync.tags.entity_tags",
+      "kind": "streams",
+      "evidence": {
+        "file": "features/tags/src/lib/tag.entities.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:table:tags.definitions",
+      "target": "tags:query:tags.get",
+      "kind": "reads",
+      "evidence": {
+        "file": "features/tags/src/lib/get-tag.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:table:tags.definitions",
+      "target": "tags:query:tags.list",
+      "kind": "reads",
+      "evidence": {
+        "file": "features/tags/src/lib/list-tags.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:table:tags.definitions",
+      "target": "tags:query:tags.get-entity-tags",
+      "kind": "reads",
+      "evidence": {
+        "file": "features/tags/src/lib/get-entity-tags.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:table:tags.assignments",
+      "target": "tags:query:tags.get-entity-tags",
+      "kind": "reads",
+      "evidence": {
+        "file": "features/tags/src/lib/get-entity-tags.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:table:tags.definitions",
+      "target": "tags:query:tags.batch-get-entity-tags",
+      "kind": "reads",
+      "evidence": {
+        "file": "features/tags/src/lib/batch-get-entity-tags.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:table:tags.assignments",
+      "target": "tags:query:tags.batch-get-entity-tags",
+      "kind": "reads",
+      "evidence": {
+        "file": "features/tags/src/lib/batch-get-entity-tags.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:table:tags.definitions",
+      "target": "tags:query:tags.search-entities",
+      "kind": "reads",
+      "evidence": {
+        "file": "features/tags/src/lib/search-entities.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:table:tags.assignments",
+      "target": "tags:query:tags.search-entities",
+      "kind": "reads",
+      "evidence": {
+        "file": "features/tags/src/lib/search-entities.ts",
+        "line": 1
+      }
+    },
+    {
+      "source": "tags:table:tags.assignments",
+      "target": "tags:query:tags.list",
+      "kind": "reads",
+      "evidence": {
+        "file": "features/tags/src/lib/list-tags.ts",
+        "line": 1
+      }
+    }
+  ],
+  "types": {
+    "OrganizationFields": {
+      "name": "OrganizationFields",
+      "fields": [
+        {
+          "name": "name",
+          "type": "string",
+          "optional": false,
+          "note": "1–200",
+          "refs": []
+        },
+        {
+          "name": "slug",
+          "type": "slug",
+          "optional": false,
+          "note": "a-z0-9, дефіси",
+          "refs": []
+        },
+        {
+          "name": "tags",
+          "type": "string[]",
+          "optional": false,
+          "note": "≤ 10, default []",
+          "refs": []
+        }
+      ],
+      "refs": [],
+      "evidence": {
+        "file": "features/organizations/contracts/src/lib/organizations-contracts.ts",
+        "line": 1
+      }
+    },
+    "Organization": {
+      "name": "Organization",
+      "fields": [
+        {
+          "name": "…",
+          "type": "OrganizationFields",
+          "optional": false,
+          "refs": [
+            "OrganizationFields"
+          ]
+        },
+        {
+          "name": "id",
+          "type": "string",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "logoKey",
+          "type": "string | null",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "lifecycle",
+          "type": "'provisioning' | 'active' | 'suspended' | 'archived'",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "creatorId",
+          "type": "string | null",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "createdAt",
+          "type": "datetime",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "updatedAt",
+          "type": "datetime",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "version",
+          "type": "string",
+          "optional": false,
+          "note": "цифри",
+          "refs": []
+        }
+      ],
+      "refs": [
+        "OrganizationFields"
+      ],
+      "evidence": {
+        "file": "features/organizations/contracts/src/lib/organizations-contracts.ts",
+        "line": 1
+      }
+    },
+    "OrganizationProvisioning": {
+      "name": "OrganizationProvisioning",
+      "fields": [
+        {
+          "name": "id",
+          "type": "uuidv7",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "organizationId",
+          "type": "string",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "actorId",
+          "type": "string",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "fields",
+          "type": "OrganizationFields",
+          "optional": false,
+          "refs": [
+            "OrganizationFields"
+          ]
+        },
+        {
+          "name": "stage",
+          "type": "'requested' | 'zitadel-created' | 'aggregate-created' | 'admin-assigned' | 'completed'",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "createdAt",
+          "type": "datetime",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "updatedAt",
+          "type": "datetime",
+          "optional": false,
+          "refs": []
+        }
+      ],
+      "refs": [
+        "OrganizationFields"
+      ],
+      "evidence": {
+        "file": "features/organizations/contracts/src/lib/organizations-contracts.ts",
+        "line": 1
+      }
+    },
+    "OrganizationSync": {
+      "name": "OrganizationSync",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "desiredVersion",
+          "type": "string",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "appliedVersion",
+          "type": "string",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "attempts",
+          "type": "int ≥ 0",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "nextAttemptAt",
+          "type": "datetime",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "error",
+          "type": "'upstream-unavailable' | 'upstream-conflict' | 'upstream-missing' | null",
+          "optional": false,
+          "refs": []
+        }
+      ],
+      "refs": [],
+      "evidence": {
+        "file": "features/organizations/contracts/src/lib/organizations-contracts.ts",
+        "line": 1
+      }
+    },
+    "OrganizationRegistry": {
+      "name": "OrganizationRegistry",
+      "fields": [
+        {
+          "name": "ids",
+          "type": "string[]",
+          "optional": false,
+          "note": "≤ 10 000",
+          "refs": []
+        },
+        {
+          "name": "operations",
+          "type": "uuidv7[]",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "adopted",
+          "type": "boolean",
+          "optional": false,
+          "refs": []
+        }
+      ],
+      "refs": [],
+      "evidence": {
+        "file": "features/organizations/contracts/src/lib/organizations-contracts.ts",
+        "line": 1
+      }
+    },
+    "OrganizationReceipt": {
+      "name": "OrganizationReceipt",
+      "fields": [
+        {
+          "name": "fingerprint",
+          "type": "string",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "organization",
+          "type": "Organization",
+          "optional": false,
+          "refs": [
+            "Organization"
+          ]
+        }
+      ],
+      "refs": [
+        "Organization"
+      ],
+      "evidence": {
+        "file": "features/organizations/contracts/src/lib/organizations-contracts.ts",
+        "line": 1
+      }
+    },
+    "OrganizationSlug": {
+      "name": "OrganizationSlug",
+      "fields": [
+        {
+          "name": "slug",
+          "type": "slug",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "organizationId",
+          "type": "string | null",
+          "optional": false,
+          "refs": []
+        }
+      ],
+      "refs": [],
+      "evidence": {
+        "file": "features/organizations/contracts/src/lib/organizations-contracts.ts",
+        "line": 1
+      }
+    },
+    "OrganizationListItem": {
+      "name": "OrganizationListItem",
+      "fields": [
+        {
+          "name": "…",
+          "type": "Organization",
+          "optional": false,
+          "refs": [
+            "Organization"
+          ]
+        },
+        {
+          "name": "sync",
+          "type": "OrganizationSync | null",
+          "optional": false,
+          "refs": [
+            "OrganizationSync"
+          ]
+        }
+      ],
+      "refs": [
+        "Organization",
+        "OrganizationSync"
+      ],
+      "evidence": {
+        "file": "features/organizations/contracts/src/lib/projection-contracts.ts",
+        "line": 1
+      }
+    },
+    "OrganizationActivity": {
+      "name": "OrganizationActivity",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "organizationId",
+          "type": "string",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "action",
+          "type": "string",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "sourceEventId",
+          "type": "string",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "scope",
+          "type": "ScopeRef",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "affectedUserIds",
+          "type": "string[]",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "affectedObjects",
+          "type": "{ kind: 'role' | 'tag', id }[]",
+          "optional": true,
+          "refs": []
+        },
+        {
+          "name": "initiator",
+          "type": "Actor",
+          "optional": true,
+          "refs": []
+        },
+        {
+          "name": "outcome",
+          "type": "'succeeded' | 'unknown'",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "actor",
+          "type": "{ type: 'user' | 'service', id }",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "recordedAt",
+          "type": "datetime",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "occurredAt",
+          "type": "datetime",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "version",
+          "type": "string",
+          "optional": false,
+          "refs": []
+        }
+      ],
+      "refs": [],
+      "evidence": {
+        "file": "features/organizations/contracts/src/lib/projection-contracts.ts",
+        "line": 1
+      }
+    },
+    "OrganizationActor": {
+      "name": "OrganizationActor",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "type",
+          "type": "'user'",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "updatedAt",
+          "type": "datetime",
+          "optional": false,
+          "refs": []
+        }
+      ],
+      "refs": [],
+      "evidence": {
+        "file": "features/organizations/contracts/src/lib/projection-contracts.ts",
+        "line": 1
+      }
+    },
+    "Tag": {
+      "name": "Tag",
+      "fields": [
+        {
+          "name": "id",
+          "type": "uuidv7",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "slug",
+          "type": "slug",
+          "optional": false,
+          "note": "≤ 50",
+          "refs": []
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "optional": false,
+          "note": "1–100",
+          "refs": []
+        },
+        {
+          "name": "color",
+          "type": "TagColor",
+          "optional": false,
+          "refs": [
+            "TagColor"
+          ]
+        },
+        {
+          "name": "scope",
+          "type": "AuthorizationScope",
+          "optional": false,
+          "refs": [
+            "AuthorizationScope"
+          ]
+        },
+        {
+          "name": "createdAt",
+          "type": "datetime",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "updatedAt",
+          "type": "datetime",
+          "optional": false,
+          "refs": []
+        }
+      ],
+      "refs": [
+        "TagColor",
+        "AuthorizationScope"
+      ],
+      "evidence": {
+        "file": "features/tags/contracts/src/lib/tags-contracts.ts",
+        "line": 1
+      }
+    },
+    "TagSummary": {
+      "name": "TagSummary",
+      "fields": [
+        {
+          "name": "id",
+          "type": "uuidv7",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "slug",
+          "type": "slug",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "color",
+          "type": "TagColor",
+          "optional": false,
+          "refs": [
+            "TagColor"
+          ]
+        }
+      ],
+      "refs": [
+        "TagColor"
+      ],
+      "evidence": {
+        "file": "features/tags/contracts/src/lib/tags-contracts.ts",
+        "line": 1
+      }
+    },
+    "TagColor": {
+      "name": "TagColor",
+      "alias": "'slate' | 'gray' | 'red' | 'orange' | 'amber' | 'yellow' | 'green' | 'emerald' | 'teal' | 'cyan' | 'sky' | 'blue' | 'indigo' | 'violet' | 'purple' | 'fuchsia' | 'pink' | 'rose'",
+      "refs": [],
+      "evidence": {
+        "file": "features/tags/contracts/src/lib/tags-contracts.ts",
+        "line": 1
+      }
+    },
+    "AuthorizationScope": {
+      "name": "AuthorizationScope",
+      "fields": [
+        {
+          "name": "kind",
+          "type": "'platform' | 'organization'",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "organizationId",
+          "type": "string",
+          "optional": false,
+          "note": "коли kind = organization",
+          "refs": []
+        }
+      ],
+      "refs": [],
+      "evidence": {
+        "file": "features/tags/contracts/src/lib/tags-contracts.ts",
+        "line": 1
+      }
+    },
+    "EntityRef": {
+      "name": "EntityRef",
+      "fields": [
+        {
+          "name": "type",
+          "type": "'user' | 'role' | 'role-template' | 'organization' | 'website' | 'website-layout' | 'website-page'",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "id",
+          "type": "string",
+          "optional": false,
+          "refs": []
+        }
+      ],
+      "refs": [],
+      "evidence": {
+        "file": "features/tags/contracts/src/lib/tags-contracts.ts",
+        "line": 1
+      }
+    },
+    "EntityTagListItem": {
+      "name": "EntityTagListItem",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "entity",
+          "type": "EntityRef",
+          "optional": false,
+          "refs": [
+            "EntityRef"
+          ]
+        },
+        {
+          "name": "tagId",
+          "type": "uuidv7",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "scope",
+          "type": "AuthorizationScope",
+          "optional": false,
+          "refs": [
+            "AuthorizationScope"
+          ]
+        },
+        {
+          "name": "assignedAt",
+          "type": "datetime",
+          "optional": false,
+          "refs": []
+        },
+        {
+          "name": "assignedBy",
+          "type": "string | null",
+          "optional": true,
+          "refs": []
+        }
+      ],
+      "refs": [
+        "EntityRef",
+        "AuthorizationScope"
+      ],
+      "evidence": {
+        "file": "features/tags/contracts/src/lib/projection-contracts.ts",
+        "line": 1
+      }
+    },
+    "TagScopeState": {
+      "name": "TagScopeState",
+      "fields": [
+        {
+          "name": "tags",
+          "type": "Tag[]",
+          "optional": false,
+          "refs": [
+            "Tag"
+          ]
+        },
+        {
+          "name": "associations",
+          "type": "TagAssociation[]",
+          "optional": false,
+          "refs": []
+        }
+      ],
+      "refs": [
+        "Tag"
+      ],
+      "evidence": {
+        "file": "features/tags/contracts/src/lib/aggregate-contracts.ts",
+        "line": 1
+      }
+    }
+  },
+  "checks": []
+}

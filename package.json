@@ -1,0 +1,28 @@
+{
+  "name": "code-atlas",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.13.2",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm --filter @code-atlas/web build",
+    "dev": "pnpm --filter @code-atlas/web dev",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "check": "pnpm typecheck && pnpm lint && pnpm test",
+    "atlas": "node packages/cli/bin/code-atlas.js"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.6.3",
+    "eslint": "^10.11.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.71.0",
+    "vitest": "^5.0.3"
+  }
+}

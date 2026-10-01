@@ -1,0 +1,16 @@
+{
+  "name": "@code-atlas/model",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./fixtures/*": "./fixtures/*"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "zod": "^4.0.0"
+  }
+}
