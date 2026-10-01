@@ -10,7 +10,7 @@ const HELP = `code-atlas: a live map of a codebase's architecture
 
 Usage
   code-atlas extract <repo> [--out model.json] [--only a,b] [--adapter name]
-  code-atlas serve <repo>   [--port 4400]      [--only a,b] [--adapter name] [--open]
+  code-atlas serve <repo>   [--port 4400]      [--only a,b] [--adapter name] [--open] [--state-dir dir]
 
 Options
   --out      Where to write the model. Default: model.json. Use - for stdout.
@@ -18,6 +18,7 @@ Options
   --adapter  Force an adapter instead of detecting one.
   --port     Port for the web app and its WebSocket. Default: 4400.
   --open     Open the browser once the server is up.
+  --state-dir  Where serve keeps layout.json. Default: <repo>/.code-atlas.
 `;
 
 export async function main(argv: string[]): Promise<void> {
@@ -39,6 +40,7 @@ async function run(argv: string[]) {
       adapter: { type: 'string' },
       port: { type: 'string' },
       open: { type: 'boolean' },
+      'state-dir': { type: 'string' },
       help: { type: 'boolean', short: 'h' },
     },
   });
@@ -74,5 +76,15 @@ async function run(argv: string[]) {
   }
 
   const { serve } = await import('./serve.ts');
-  await serve({ root, adapter, config, port: Number(values.port ?? 4400), open: values.open ?? false, ...options });
+  const port = Number(values.port ?? 4400);
+  if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error(`--port must be a number, got "${values.port}".`);
+  await serve({
+    root,
+    adapter,
+    config,
+    port,
+    open: values.open ?? false,
+    ...(values['state-dir'] ? { stateDir: resolve(values['state-dir']) } : {}),
+    ...options,
+  });
 }

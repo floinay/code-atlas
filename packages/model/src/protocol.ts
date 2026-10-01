@@ -20,11 +20,14 @@ export type FeedEntry = {
 };
 
 /** Server → browser, over the WebSocket at `/ws`. */
-export type ServerMessage = {
-  type: 'model';
-  model: Model;
-  layout: Layout;
-  /** Empty on the first message. */
-  diff: ModelDiff;
-  feed: FeedEntry[];
-};
+export type ServerMessage =
+  | {
+      type: 'model';
+      model: Model;
+      layout: Layout;
+      /** Empty on the first message. */
+      diff: ModelDiff;
+      feed: FeedEntry[];
+    }
+  /** Files changed and the map did not, or the extraction failed: only the feed moves. */
+  | { type: 'feed'; feed: FeedEntry[] };

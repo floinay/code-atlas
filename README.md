@@ -18,12 +18,26 @@ Early. See [CHANGELOG.md](CHANGELOG.md) for what each milestone added.
 
 ```bash
 pnpm install
-pnpm dev          # the web app on http://localhost:5273, with the bundled fixture
-
-# Extract a repository and look at it
-pnpm atlas extract ../my-repo --out apps/web/public/model.json
-open "http://localhost:5273/?model=/model.json"
+pnpm build                          # builds the web app once
+pnpm atlas serve ../my-repo         # http://localhost:4400, follows file changes
 ```
+
+`serve` extracts the repository, serves the map and watches the files. When something changes it
+extracts again, works out what is new, keeps every node where it was and pushes the update to the
+browser. New elements get a badge; a new event that a projection forgot gets a warning.
+
+It keeps the layout in `<repo>/.code-atlas/layout.json`. Pass `--state-dir` to keep it elsewhere,
+for example when the repository must stay untouched.
+
+```bash
+pnpm atlas serve ../my-repo --only organizations,tags    # two domains in full, neighbours collapsed
+pnpm atlas extract ../my-repo --out model.json           # the model as a file
+pnpm dev                                                 # web app with hot reload, on :5273
+```
+
+`pnpm dev` talks to a running `serve` on port 4400. Without one it shows the bundled fixture and a
+demo of an agent adding a feature. To look at a model file, put it in `apps/web/public` and open
+`http://localhost:5273/?model=/model.json`.
 
 ## Layout
 
@@ -33,7 +47,7 @@ open "http://localhost:5273/?model=/model.json"
 | `packages/extractor-yeda` | Reads a Yeda monorepo with the TypeScript compiler API. |
 | `packages/cli` | `code-atlas serve` and `code-atlas extract`. |
 | `apps/web` | The map: React, Vite and a hand-written SVG canvas. |
-| `docs` | [The model](docs/model.md), [the web app](docs/web.md), [the Yeda extractor](docs/extractor-yeda.md). |
+| `docs` | [The model](docs/model.md), [the web app](docs/web.md), [the CLI and live updates](docs/cli.md), [the Yeda extractor](docs/extractor-yeda.md). |
 
 ## Develop
 

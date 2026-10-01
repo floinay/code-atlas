@@ -81,7 +81,7 @@ export function useAtlas() {
   stateRef.current = state;
 
   /** A server message: the model, its layout and what changed. */
-  const receive = useCallback((message: ServerMessage, first: boolean) => {
+  const receive = useCallback((message: Extract<ServerMessage, { type: 'model' }>, first: boolean) => {
     setState((previous) => {
       const model = message.model;
       const view = buildView(model);
@@ -162,6 +162,13 @@ export function useAtlas() {
       let fresh = first;
       socket.onmessage = (event) => {
         const message = JSON.parse(String(event.data)) as ServerMessage;
+        if (message.type === 'feed') {
+          setState((previous) => ({
+            ...previous,
+            feed: [...[...message.feed].reverse(), ...previous.feed].slice(0, FEED_LIMIT),
+          }));
+          return;
+        }
         if (message.type !== 'model') return;
         receive(message, fresh);
         fresh = false;

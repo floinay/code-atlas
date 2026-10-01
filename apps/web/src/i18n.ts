@@ -151,7 +151,7 @@ export const t = {
   bundleDescription: (n: number, kind: ElementKind) =>
     `${n} ${plural(n, KINDS[kind].plural)} з однаковими зв’язками і однаковою відповіддю згорнуті в один вузол.`,
   checkMessage: (event: string, aggregate: string, consumers: string[], siblings: number) =>
-    `${consumers.join(', ')} ${consumers.length > 1 ? 'обробляють' : 'обробляє'} всі ${siblings} інших подій ${aggregate}, але не ${event}.`,
+    `${consumers.join(', ')} ${consumers.length > 1 ? 'обробляють' : 'обробляє'} всі ${siblings} ${plural(siblings, ['іншу подію', 'інші події', 'інших подій'])} ${aggregate}, але не ${event}.`,
 };
 
 /** A feed entry as a sentence. The server sends data, the sentence is ours. */

@@ -1,5 +1,16 @@
 # Changelog
 
+## Milestone 4: serve, watch, live updates, stable layout
+
+- `code-atlas serve <repo>`: extracts, serves the built web app, watches files with chokidar,
+  extracts again on change and pushes the model, its layout and the diff over a WebSocket.
+- Incremental: only changed files are parsed again; an update of the full Yeda map takes about 0.25 s.
+- The layout is computed from the previous one and saved to `.code-atlas/layout.json`
+  (`--state-dir` moves it). New elements take the next free slot and get a badge; nothing else moves.
+- The feed lists what was added, removed or changed, new warnings, and file changes that left the
+  map as it was. A failed extraction keeps the last good model.
+- Tests run a real server on a copy of the mini repository and edit files under it.
+
 ## Milestone 3: every Yeda feature
 
 - The versioning platform: generated events, the three projections of each storage, their tables
