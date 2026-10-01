@@ -86,11 +86,24 @@ export class Evaluator {
   private declValues = new Map<ts.Node, Value>();
   private busy = new Set<ts.Node>();
   private depth = 0;
-  /** Functions outside these folders are treated as opaque calls. */
+  /**
+   * Functions outside the feature folders are opaque calls, except the few
+   * platform helpers named in `inlinePlatform`, which are simple enough to
+   * read through (they build tables or lists from their arguments).
+   */
   constructor(
     readonly ws: Workspace,
     private inlinable: (file: string) => boolean,
+    private inlinePlatform: Set<string> = new Set(),
   ) {}
+
+  /** Whether calls to this function are followed. */
+  canInline(fn: FnValue): boolean {
+    if (this.inlinable(fn.scope.file)) return true;
+    for (let node: ts.Node | undefined = fn.node; node; node = node.parent)
+      if (ts.isFunctionDeclaration(node) && node.name && this.inlinePlatform.has(node.name.text)) return true;
+    return false;
+  }
 
   fileScope(file: string): Scope {
     let scope = this.fileScopes.get(file);
@@ -186,8 +199,13 @@ export class Evaluator {
       }
       if (operator === ts.SyntaxKind.QuestionQuestionToken || operator === ts.SyntaxKind.BarBarToken) {
         const left = this.eval(node.left, scope);
-        return left.k === 'unknown' || left.k === 'null' ? this.eval(node.right, scope) : left;
+        return isMissing(left) ? this.eval(node.right, scope) : left;
       }
+    }
+    if (ts.isConditionalExpression(node)) {
+      // The condition is a runtime matter; whichever branch holds a value is what the name can be.
+      const whenTrue = this.eval(node.whenTrue, scope);
+      return isMissing(whenTrue) ? this.eval(node.whenFalse, scope) : whenTrue;
     }
     return { k: 'unknown', node, scope };
   }
@@ -266,13 +284,13 @@ export class Evaluator {
       // Only plain objects and module namespaces carry callable members of ours;
       // on anything else the name is a library method such as z.string().min().
       const method = recv.k === 'obj' || recv.k === 'ns' ? this.member(recv, name) : undefined;
-      if (method?.k === 'fn' && this.inlinable(method.scope.file)) return this.apply(method, args.map((a) => a()));
+      if (method?.k === 'fn' && this.canInline(method)) return this.apply(method, args.map((a) => a()));
       const spec = specOf(recv);
       return { k: 'call', name, recv, args, node, scope, ...(spec ? { spec } : {}) };
     }
 
     const target = this.eval(callee, scope);
-    if (target.k === 'fn' && this.inlinable(target.scope.file)) {
+    if (target.k === 'fn' && this.canInline(target)) {
       // Spread arguments: `fn(...list)` passes the items of a known array.
       const values = node.arguments.flatMap((argument, index) => {
         const value = args[index]!();
@@ -295,16 +313,19 @@ export class Evaluator {
   /** The scope inside `fn` when called with `args`. */
   bind(fn: FnValue, args: Value[]): Scope {
     const values = new Map<string, Value>();
+    const scope = this.enter(fn.node, fn.scope, values);
     fn.node.parameters.forEach((parameter, index) => {
-      const arg = parameter.dotDotDotToken
-        ? ({ k: 'arr', items: args.slice(index).map(known), node: parameter } satisfies Value)
+      let arg: Value = parameter.dotDotDotToken
+        ? { k: 'arr', items: args.slice(index).map(known), node: parameter }
         : (args[index] ?? UNKNOWN);
-      this.bindPattern(parameter.name, arg, values);
+      // `({ makeClient = createClient } = {})`: a missing argument takes its default.
+      if (parameter.initializer && isMissing(arg)) arg = this.eval(parameter.initializer, scope);
+      this.bindPattern(parameter.name, arg, values, scope);
     });
-    return this.enter(fn.node, fn.scope, values);
+    return scope;
   }
 
-  private bindPattern(name: ts.BindingName, value: Value, into: Map<string, Value>) {
+  private bindPattern(name: ts.BindingName, value: Value, into: Map<string, Value>, scope: Scope) {
     if (ts.isIdentifier(name)) {
       into.set(name.text, value);
       return;
@@ -314,13 +335,14 @@ export class Evaluator {
       const key = ts.isObjectBindingPattern(name)
         ? (propertyName(element.propertyName) ?? propertyName(element.name))
         : undefined;
-      const part =
+      let part =
         key !== undefined
           ? this.member(value, key)
           : value.k === 'arr'
             ? (value.items[index]?.() ?? UNKNOWN)
             : UNKNOWN;
-      this.bindPattern(element.name, part, into);
+      if (element.initializer && isMissing(part)) part = this.eval(element.initializer, scope);
+      this.bindPattern(element.name, part, into, scope);
     });
   }
 
@@ -358,11 +380,14 @@ export class Evaluator {
     if (local.kind === 'function') return { k: 'fn', node: local.node, scope };
     if (local.kind === 'binding') return this.evalBinding(local.node, scope);
     const declaration = local.node;
-    if (declaration.initializer) return this.eval(declaration.initializer, scope);
-    // `let x;` assigned once later, usually inside a start hook.
-    const assignment = scope.fn ? findAssignment(scope.fn, (declaration.name as ts.Identifier).text) : undefined;
-    if (!assignment) return UNKNOWN;
-    return this.eval(assignment.right, this.scopeWithin(assignment, scope));
+    const initializer = declaration.initializer;
+    // `let x;` or `let x = null;` assigned later, usually inside a start hook: the assignment is the value.
+    const placeholder = !initializer || isResetValue(unwrap(initializer));
+    const mutable = (declaration.parent.flags & ts.NodeFlags.Let) !== 0;
+    const assignment =
+      placeholder && mutable && scope.fn ? findAssignment(scope.fn, (declaration.name as ts.Identifier).text) : undefined;
+    if (assignment) return this.eval(assignment.right, this.scopeWithin(assignment, scope));
+    return initializer ? this.eval(initializer, scope) : UNKNOWN;
   }
 
   /** The scope of `node`, nested inside the already-bound `outer` scope. */
@@ -436,7 +461,7 @@ export class Evaluator {
     if (cached) return cached;
     const scope = this.fileScope(declaration.file);
     const origin: Origin = { name: declaration.name, file: declaration.file, node };
-    const opaque = !this.inlinable(declaration.file);
+    const opaque = !this.inlinable(declaration.file) && !this.inlinePlatform.has(declaration.name);
     const value = this.guard(node, () => {
       if (declaration.kind === 'function')
         return opaque ? this.platform(declaration) : ({ k: 'fn', node: declaration.node, scope } satisfies Value);
@@ -489,6 +514,12 @@ export class Evaluator {
   }
 }
 
+/** Nothing is known about the value: an unbound name, or a property nobody set. */
+export function isMissing(value: Value): boolean {
+  if (value.k === 'unknown' || value.k === 'null') return true;
+  return value.k === 'member' && (value.of.k === 'obj' || isMissing(value.of));
+}
+
 /** The package or platform file a value ultimately comes from. */
 export function specOf(value: Value | undefined): string | undefined {
   if (!value) return undefined;
@@ -517,6 +548,7 @@ function findAssignment(fn: ts.Node, name: string): ts.BinaryExpression | undefi
   return found;
 }
 const isResetValue = (node: ts.Expression) =>
+  ts.isVoidExpression(node) ||
   (ts.isIdentifier(node) && node.text === 'undefined') ||
   node.kind === ts.SyntaxKind.NullKeyword ||
   node.kind === ts.SyntaxKind.FalseKeyword ||

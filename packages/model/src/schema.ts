@@ -290,5 +290,11 @@ export const DomainsConfig = z.strictObject({
     .default({}),
   /** When set, only these domains are drawn in full; the rest collapse into blocks. */
   explore: z.array(z.string()).optional(),
+  checks: z
+    .strictObject({
+      /** Events that are known to be unhandled on purpose, by name (`auth.user-deleted`) or id. */
+      ignore: z.array(z.string()).default([]),
+    })
+    .optional(),
 });
 export type DomainsConfig = z.infer<typeof DomainsConfig>;

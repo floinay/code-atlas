@@ -8,7 +8,13 @@ export type RunOptions = { explore?: string[] };
 export function runExtraction(root: string, extractor: Extractor, config: DomainsConfig, options: RunOptions = {}) {
   const { model: full, stats } = extractor.extract();
   const branch = currentBranch(root);
-  const stamped: Model = { ...full, repo: { ...full.repo, ...(branch ? { branch } : {}) } };
+  const ignored = new Set(config.checks?.ignore ?? []);
+  const names = new Map(full.elements.map((e) => [e.id, e.name]));
+  const stamped: Model = {
+    ...full,
+    repo: { ...full.repo, ...(branch ? { branch } : {}) },
+    checks: full.checks.filter((c) => !ignored.has(c.element) && !ignored.has(names.get(c.element) ?? '')),
+  };
   const explore = options.explore ?? config.explore;
   if (explore) {
     const unknown = explore.filter((id) => !stamped.domains.some((d) => d.id === id));

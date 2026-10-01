@@ -13,7 +13,7 @@ describe('mini repository', () => {
   });
 
   it('maps feature folders to domains and reads their description', () => {
-    expect(model.domains.map((d) => d.id)).toEqual(['billing', 'orders']);
+    expect(model.domains.map((d) => d.id)).toEqual(['billing', 'orders', 'pages']);
     expect(model.domains.find((d) => d.id === 'orders')).toMatchObject({
       name: 'Orders',
       path: 'features/orders',
@@ -91,7 +91,9 @@ describe('routes', () => {
 
 describe('types', () => {
   it('names object schemas, inlines scalars and keeps an alias under its first name', () => {
-    expect(Object.keys(model.types)).toEqual(['Invoice', 'Order', 'OrderError', 'OrderFields', 'OrderLine', 'OrderStatus']);
+    expect(Object.keys(model.types)).toEqual([
+      'Invoice', 'Order', 'OrderError', 'OrderFields', 'OrderLine', 'OrderStatus', 'Page', 'PageAudit',
+    ]);
     expect(model.types['Order']?.fields?.map((f) => `${f.name}: ${f.type}`)).toEqual([
       '…: OrderFields', 'id: uuidv7', 'status: OrderStatus', 'placedAt: datetime',
     ]);
@@ -200,6 +202,15 @@ describe('across domains', () => {
     ]);
   });
 
+  it('turns a listenEvents consumer into a projection without an entity', () => {
+    const audit = r.find('projection', 'pages.audit');
+    expect(audit.entity).toMatchObject({ consumer: 'pages-audit', row: { type: 'PageAudit' } });
+    expect(audit.evidence.file).toBe('features/pages/src/lib/pages.feature.ts');
+    // on(combine(A, B), handler), and the handler's table through a helper.
+    expect(r.into(audit.id, 'handles')).toEqual(['orders.placed', 'orders.shipped']);
+    expect(r.out(audit.id, 'writes')).toEqual(['pages.audit']);
+  });
+
   it('links routes called through invoke and context.call', () => {
     expect(r.out(r.find('command', 'orders.place').id, 'calls')).toEqual(['ZITADEL', 'billing.reserve']);
     expect(r.out(r.find('command', 'billing.reserve').id, 'calls')).toEqual(['orders.check']);
@@ -233,6 +244,88 @@ describe('checks and view', () => {
     const labels = [...nodes].map((id) => view.byId.get(id)!.label);
     expect(labels).toEqual(expect.arrayContaining(['Order', 'shipped', 'Orders', 'read_orders', 'sync.orders', 'Invoices', 'list']));
     expect(labels).not.toContain('refunded');
+  });
+});
+
+describe('versioning platform', () => {
+  it('generates the event family of a versioned contract, by its lifecycle options', () => {
+    expect(r.labels('pages', 'event')).toEqual([
+      'archived', 'created', 'draft-restored', 'draft-saved', 'published', 'unarchived', 'unpublished',
+    ]);
+    const page = r.find('aggregate', 'Page');
+    expect(r.out(page.id, 'emits')).toHaveLength(7);
+    expect(r.find('event', 'pages.draft-saved').payload?.fields?.map((f) => `${f.name}: ${f.type}`)).toEqual([
+      'data: Page', 'dataSchemaVersion: int',
+    ]);
+    expect(r.find('event', 'pages.created').evidence.file).toBe('features/pages/contracts/src/lib/pages-contracts.ts');
+  });
+
+  it('maps storage calls to the events they append and the projections they read', () => {
+    expect(r.names(r.find('command', 'pages.save').appends)).toEqual(['pages.draft-saved']);
+    expect(r.names(r.find('command', 'pages.publish').appends)).toEqual(['pages.published']);
+    // storage[command](…) with the command bound per route.
+    expect(r.names(r.find('command', 'pages.archive').appends)).toEqual(['pages.archived']);
+    expect(r.names(r.find('command', 'pages.unarchive').appends)).toEqual(['pages.unarchived']);
+    expect(r.into(r.find('query', 'pages.get-draft').id, 'reads')).toEqual(['pages.page_drafts']);
+    expect(r.find('query', 'pages.get-draft').http?.path).toBe('/api/pages/get-draft');
+  });
+
+  it('adds the three projections of a storage with their tables and live collections', () => {
+    expect(r.labels('pages', 'projection')).toEqual(['Audit', 'Page drafts', 'Page published', 'Page versions']);
+    const drafts = r.find('projection', 'pages.page_drafts');
+    expect(drafts.entity).toEqual({
+      name: 'pages_drafts',
+      permissions: [],
+      row: { type: 'DraftRow<Page>', refs: ['Page'] },
+      consumer: 'pages-drafts',
+    });
+    expect(r.into(drafts.id, 'handles')).toHaveLength(7);
+    expect(r.out(drafts.id, 'writes')).toEqual(['pages.page_drafts']);
+    expect(r.out(drafts.id, 'streams')).toEqual(['live.pages.page_drafts']);
+    expect(r.find('subscription', 'live.pages.page_drafts')).toMatchObject({
+      path: '/api/pages.pages/collections/pages.page_drafts',
+      permission: 'pages.read',
+    });
+  });
+
+  it('reads tables a platform helper builds, and leaves its bookkeeping table out', () => {
+    expect(r.labels('pages', 'table')).toEqual(['audit', 'page_drafts', 'page_published', 'page_versions']);
+    const versions = r.find('table', 'pages.page_versions');
+    expect(versions.columns.map((c) => c.name)).toEqual(['scope', 'aggregate_id', 'generation', 'version_id', 'row']);
+    expect(versions.primaryKey).toEqual(['scope', 'generation', 'aggregate_id', 'version_id']);
+    expect(versions.domain).toBe('pages');
+    expect(versions.evidence.file).toBe('features/pages/src/lib/pages.schema.ts');
+    // A destructured export of the helper's result is the same table.
+    expect(r.into(r.find('query', 'pages.list').id, 'reads')).toEqual(['pages.page_drafts']);
+  });
+
+  it('finds a worker that only writes a table, through raw SQL', () => {
+    const prune = r.find('worker', 'pruneAudit');
+    expect(prune).toMatchObject({ trigger: 'loop', appends: [], description: 'Drops audit rows older than a month.' });
+    expect(r.out(prune.id, 'writes')).toEqual(['pages.audit']);
+  });
+});
+
+describe('domains config', () => {
+  const extract = (config: Parameters<typeof createYedaExtractor>[1]) => reader(createYedaExtractor(miniRoot, config).extract().model);
+
+  it('renames, describes and ignores domains', () => {
+    const configured = createYedaExtractor(miniRoot, {
+      domains: { orders: { name: 'Shop orders', description: 'Everything about orders.' }, pages: { ignore: true } },
+    }).extract().model;
+    expect(configured.domains).toEqual([
+      { id: 'billing', name: 'Billing', path: 'features/billing' },
+      { id: 'orders', name: 'Shop orders', path: 'features/orders', description: 'Everything about orders.' },
+    ]);
+    expect(configured.elements.some((e) => e.domain === 'pages')).toBe(false);
+  });
+
+  it('merges one folder into another domain', () => {
+    const merged = extract({ domains: { billing: { mergeInto: 'orders' } } });
+    expect(merged.find('command', 'billing.reserve').domain).toBe('orders');
+    expect(merged.find('table', 'billing.invoices').domain).toBe('orders');
+    // Calls inside one domain are not cross-domain edges.
+    expect(merged.out(merged.find('command', 'orders.place').id, 'calls')).toEqual(['ZITADEL']);
   });
 });
 

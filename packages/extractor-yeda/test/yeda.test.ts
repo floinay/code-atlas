@@ -197,3 +197,85 @@ describe.skipIf(!root)('Yeda: organizations and tags', () => {
     }
   });
 });
+
+describe.skipIf(!root)('Yeda: every feature', () => {
+  const { model, stats } = root ? createYedaExtractor(root).extract() : undefined!;
+  const r = model ? reader(model) : undefined!;
+
+  it('maps the features that have something to show', () => {
+    expect(model.domains.map((d) => d.id)).toEqual([
+      'auth', 'forms', 'media', 'notifications', 'organizations', 'page-editor', 'roles', 'secrets',
+      'settings', 'tags', 'test-orchestration', 'users', 'websites',
+    ]);
+    expect(model.elements.length).toBeGreaterThan(450);
+    expect(model.edges.length).toBeGreaterThan(800);
+  });
+
+  it('stays well under two seconds for a full extract', () => {
+    expect(stats.files).toBeGreaterThan(300);
+    expect(stats.ms).toBeLessThan(2000);
+  });
+
+  it('expands route factories: settings has the same routes for shared and user documents', () => {
+    const settings = [...r.labels('settings', 'command'), ...r.labels('settings', 'query')];
+    expect(settings).toEqual(expect.arrayContaining(['get', 'set', 'publish', 'user.get', 'user.set', 'user.publish']));
+    expect(r.find('command', 'settings.user.set').http).toEqual({ method: 'POST', path: '/api/settings/user/set' });
+  });
+
+  it('models the versioning platform in forms', () => {
+    expect(r.labels('forms', 'event')).toEqual([
+      'archived', 'created', 'deleted', 'draft-restored', 'draft-saved', 'published', 'unarchived', 'unpublished',
+    ]);
+    expect(r.names(r.find('command', 'forms.save').appends)).toEqual(['forms.draft-saved']);
+    expect(r.names(r.find('command', 'forms.archive').appends)).toEqual(['forms.archived']);
+    expect(r.labels('forms', 'projection')).toEqual(['Form drafts', 'Form published', 'Form versions']);
+    expect(r.labels('forms', 'table')).toEqual(['form_drafts', 'form_published', 'form_submission', 'form_versions']);
+    expect(r.into(r.find('query', 'forms.get-draft').id, 'reads')).toEqual(['forms.form_drafts']);
+    // Submissions are plain rows next to the versioned document.
+    expect(r.out(r.find('command', 'forms.submissions.set-status').id, 'writes')).toEqual(['forms.form_submission']);
+  });
+
+  it('works for features without events: command → table → query', () => {
+    expect(r.kinds('media')).toMatchObject({ table: 3, worker: 1 });
+    expect(r.out(r.find('command', 'media.uploads.begin').id, 'writes')).toEqual(['media.files']);
+    expect(r.into(r.find('query', 'media.files.get').id, 'reads')).toEqual(['media.files']);
+    expect(r.out(r.find('command', 'secrets.set').id, 'writes')).toEqual(['secrets.secret_changes', 'secrets.secrets']);
+  });
+
+  it('finds consumers that are not entities, and workers of every kind', () => {
+    const activity = r.find('projection', 'auth.user_activity');
+    expect(r.into(activity.id, 'handles')).toEqual(expect.arrayContaining(['tags.tag-created', 'organizations.changed']));
+    expect(r.labels('auth', 'worker')).toEqual(['identity sync.step']);
+    expect(r.find('worker', 'migrateAuthorization').trigger).toBe('migration');
+    expect(r.find('worker', 'runMaintenance').trigger).toBe('loop');
+    expect(r.labels('websites', 'worker')).toEqual([
+      'migrate website themes', 'process website domain work', 'reconcile runtime apps',
+    ]);
+  });
+
+  it('names the external systems', () => {
+    const outside = model.elements.filter((e) => e.kind === 'external').map((e) => e.name).sort();
+    expect(outside).toEqual(['Domain manager', 'OpenBao', 'S3', 'ZITADEL']);
+    expect(r.into(r.find('external', 'OpenBao').id, 'calls')).toEqual(expect.arrayContaining(['secrets.set']));
+    // Signing an upload URL does not change anything.
+    expect(r.find('query', 'organizations.logo.sign-upload')).toBeDefined();
+    expect(r.find('query', 'websites.domain.inspect')).toBeDefined();
+  });
+
+  it('draws calls between domains', () => {
+    expect(r.out(r.find('command', 'auth.agent-login').id, 'calls')).toEqual(
+      expect.arrayContaining(['users.ensure-agent-user']),
+    );
+    expect(r.into(r.find('query', 'organizations.check-lifecycle').id, 'calls').length).toBeGreaterThan(5);
+  });
+
+  it('keeps ids unique and edges attached', () => {
+    const ids = model.elements.map((e) => e.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    const known = new Set(ids);
+    for (const edge of model.edges) expect(known.has(edge.source) && known.has(edge.target), `${edge.source} → ${edge.target}`).toBe(true);
+    for (const element of model.elements)
+      if (element.kind === 'command' || element.kind === 'worker')
+        for (const event of element.appends) expect(known.has(event), event).toBe(true);
+  });
+});

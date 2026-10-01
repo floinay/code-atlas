@@ -1,5 +1,21 @@
 # Changelog
 
+## Milestone 3: every Yeda feature
+
+- The versioning platform: generated events, the three projections of each storage, their tables
+  and live collections, and storage calls as appends and reads. Forms, settings and websites are
+  now drawn in full.
+- Route factories with template names, `defineFeature` in object form, handlers registered through
+  `.map(...)` and computed members, parameter defaults and `let x = null` assigned at start.
+- `listenEvents` consumers as projections. Workers found from what the start hook calls: loops,
+  startup tasks and migrations, including ones that only write tables or external systems.
+- External systems: ZITADEL, S3, OpenBao and the gRPC domain manager, with writes told from reads
+  by HTTP verb, SDK command or name.
+- `.code-atlas/domains.yaml`: `roots`, `explore`, per-domain `name`, `description`, `paths`,
+  `ignore`, `mergeInto`, and `checks.ignore`.
+- A full extract of Yeda main: 13 domains, 508 elements, 910 edges from 448 files in about 0.4 s.
+- Web app: domain names take over as large labels when the map is zoomed out past readable nodes.
+
 ## Milestone 2: Yeda extractor for organizations and tags
 
 - `@code-atlas/extractor-yeda`: workspace resolver, a symbolic evaluator that inlines feature

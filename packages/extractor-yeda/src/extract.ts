@@ -18,6 +18,7 @@ import {
   type RouteResponse,
   type SubscriptionElement,
   type TableElement,
+  type TypeExpr,
   type TableIndex,
   type WorkerElement,
 } from '@code-atlas/model';
@@ -25,31 +26,35 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import ts from 'typescript';
 import { capitalize, humanize } from './ast.ts';
+import { callName, walk } from './ast.ts';
 import { Evaluator, type CallValue, type FnNode, type FnValue, type Value } from './evaluate.ts';
-import { Reach, fnName, type ExternalRule, type Facts } from './reach.ts';
+import { Reach, enclosingFunction, fnName, type Entry, type ExternalRule, type Facts } from './reach.ts';
 import { TypeReader } from './types.ts';
 import type { Workspace } from './workspace.ts';
 
 export type ExtractOptions = {
-  /** Folder that holds one domain per sub-folder. */
-  featuresDir?: string;
+  /** Folders that hold one domain per sub-folder. Default: `features`. */
+  roots?: string[];
   config?: DomainsConfig;
 };
 
 export type ExtractStats = { files: number; ms: number; skipped: string[] };
 
-const SYSTEM_NAMES: Record<string, string> = { zitadel: 'ZITADEL', openbao: 'OpenBao', mailtrap: 'Mailtrap', s3: 'S3' };
-/** For plain HTTP clients the system is named after the adapter file: `mailtrap-email.ts` → Mailtrap. */
+const SYSTEM_NAMES: Record<string, string> = { zitadel: 'ZITADEL', openbao: 'OpenBao', s3: 'S3', grpc: 'gRPC' };
+/** For plain HTTP and gRPC clients the system is named after the adapter file: `mailtrap-email.ts` → Mailtrap. */
 const systemFromFile = (file: string) => {
-  const stem = basename(file).replace(/\.(ts|mts)$/, '').split(/[-._]/)[0] ?? 'external';
-  return SYSTEM_NAMES[stem] ?? capitalize(stem);
+  const stem = basename(file)
+    .replace(/\.(ts|mts)$/, '')
+    .replace(/[-.](client|api|sdk|adapter|provider|gateway|email|transport|storage)$/, '');
+  return SYSTEM_NAMES[stem] ?? capitalize(humanize(stem));
 };
 const EXTERNALS: ExternalRule[] = [
   { match: /platform\/zitadel|@zitadel\//, system: 'ZITADEL' },
+  { match: /@aws-sdk\/s3-request-presigner/, system: 'S3', direct: true },
   { match: /@aws-sdk\//, system: 'S3' },
   { match: /@grpc\//, system: systemFromFile },
   { match: /@temporalio\//, system: 'Temporal' },
-  { match: /^node:https?$|^undici$|^axios$/, system: systemFromFile },
+  { match: /^node:https?$|^undici$|^axios$/, system: systemFromFile, direct: true },
 ];
 
 const isCall = (value: Value | undefined, name: string): value is CallValue =>
@@ -58,9 +63,52 @@ const prop = (value: Value | undefined, name: string): Value | undefined =>
   value?.k === 'obj' ? value.props.get(name)?.() : undefined;
 
 type RouteDef = { value: CallValue; name: string; domain: string };
-type EventDef = { value: CallValue; name: string; aggregateType: string; domain: string; id: string };
+type EventDef = {
+  name: string;
+  aggregateType: string;
+  domain: string;
+  id: string;
+  /** Where the event is defined. */
+  node: ts.Node;
+  /** A `defineEvent` call, when there is one. Generated events have none. */
+  value?: CallValue;
+  payload?: () => TypeExpr | undefined;
+};
 type AggregateDef = { type: string; domain: string; id: string; contract?: CallValue; definition?: CallValue };
-type TableDef = { value: CallValue; id: string; domain: string };
+type TableDef = { value: CallValue; id: string; domain: string; generated: boolean };
+
+/**
+ * The versioning platform (`@/platform/aggregate-versioning`) generates a
+ * family of events, three projections and their tables for a contract. None of
+ * that is written in the feature, so the extractor knows the platform's shape.
+ */
+const VERSIONING_EVENTS: { prop: string; suffix: string; when?: 'archive' | 'delete' | 'suspend'; payload: 'data' | 'version' | 'none' }[] = [
+  { prop: 'created', suffix: 'created', payload: 'data' },
+  { prop: 'draftSaved', suffix: 'draft-saved', payload: 'data' },
+  { prop: 'draftRestored', suffix: 'draft-restored', payload: 'data' },
+  { prop: 'published', suffix: 'published', payload: 'version' },
+  { prop: 'unpublished', suffix: 'unpublished', payload: 'none' },
+  { prop: 'archived', suffix: 'archived', when: 'archive', payload: 'none' },
+  { prop: 'unarchived', suffix: 'unarchived', when: 'archive', payload: 'none' },
+  { prop: 'deleted', suffix: 'deleted', when: 'delete', payload: 'none' },
+  { prop: 'suspended', suffix: 'suspended', when: 'suspend', payload: 'none' },
+  { prop: 'resumed', suffix: 'resumed', when: 'suspend', payload: 'none' },
+];
+/** Storage method → the generated event it appends. */
+const STORAGE_COMMANDS: Record<string, string> = {
+  create: 'created', saveDraft: 'draftSaved', restoreDraft: 'draftRestored', publish: 'published',
+  unpublish: 'unpublished', archive: 'archived', unarchive: 'unarchived', delete: 'deleted',
+  suspend: 'suspended', resume: 'resumed',
+};
+/** Storage method → the projection it reads. */
+const STORAGE_READS: Record<string, Role> = {
+  getDraft: 'drafts', getPublished: 'published', getVersion: 'versions', listVersions: 'versions',
+};
+const ROLES = ['drafts', 'published', 'versions'] as const;
+type Role = (typeof ROLES)[number];
+type Versioned = { key: string; contract: CallValue; events: Map<string, EventDef> };
+type Storage = { projections: Record<Role, string>; versioned: Versioned };
+const MIGRATION = /backfill|migrat/i;
 
 /**
  * Reads a Yeda monorepo: features/<name> are domains, the route, event,
@@ -71,7 +119,9 @@ export class YedaExtraction {
   private ev: Evaluator;
   private types: TypeReader;
   private reach: Reach;
-  private featuresDir: string;
+  private roots: string[];
+  private versioned = new Map<ts.Node, Versioned | null>();
+  private storages = new Map<ts.Node, Storage>();
   private elements = new Map<string, Element>();
   private edges = new Map<string, Edge>();
   private routes = new Map<string, RouteDef>();
@@ -82,26 +132,32 @@ export class YedaExtraction {
   private features: { value: CallValue; domain: string }[] = [];
   private seen = new Set<string>();
   private handled = new Set<string>();
-  private units = new Map<FnNode, boolean>();
   readonly stats: ExtractStats = { files: 0, ms: 0, skipped: [] };
 
   constructor(
     private ws: Workspace,
     private options: ExtractOptions = {},
   ) {
-    this.featuresDir = options.featuresDir ?? 'features';
-    const inlinable = (file: string) => this.ws.rel(file).startsWith(`${this.featuresDir}/`);
-    this.ev = new Evaluator(ws, inlinable);
+    this.roots = options.roots ?? options.config?.roots ?? ['features'];
+    const inlinable = (file: string) => this.domainOf(file) !== undefined;
+    this.ev = new Evaluator(ws, inlinable, new Set(['defineVersioningTables']));
     this.types = new TypeReader(this.ev, (file) => this.domainOf(file) ?? 'platform');
-    this.reach = new Reach(this.ev, { isTable: (v) => this.tableKey(v) !== undefined, externals: EXTERNALS, inlinable });
+    this.reach = new Reach(this.ev, { isTable: (v) => this.tableKey(v) !== undefined, externals: EXTERNALS });
   }
 
+  /** The domain a file belongs to: its folder under a root, or a path claimed in the config. */
   private domainOf(file: string): string | undefined {
-    const parts = this.ws.rel(file).split('/');
-    const depth = this.featuresDir.split('/').length;
-    if (parts.slice(0, depth).join('/') !== this.featuresDir || !parts[depth]) return undefined;
-    const folder = parts[depth];
-    return this.options.config?.domains[folder]?.mergeInto ?? folder;
+    const rel = this.ws.rel(file);
+    for (const [id, override] of Object.entries(this.options.config?.domains ?? {}))
+      if (override.paths?.some((path) => rel === path || rel.startsWith(`${path.replace(/\/$/, '')}/`)))
+        return override.mergeInto ?? id;
+    for (const root of this.roots) {
+      if (!rel.startsWith(`${root}/`)) continue;
+      const folder = rel.slice(root.length + 1).split('/')[0];
+      if (!folder || this.options.config?.domains[folder]?.ignore) return undefined;
+      return this.options.config?.domains[folder]?.mergeInto ?? folder;
+    }
+    return undefined;
   }
   private domainOfNode(node: ts.Node): string {
     return this.domainOf(node.getSourceFile().fileName) ?? 'platform';
@@ -110,9 +166,12 @@ export class YedaExtraction {
   run(): Model {
     const started = performance.now();
     const folders = this.featureFolders();
-    const files = folders.flatMap((folder) =>
-      this.ws.listSources(`${this.featuresDir}/${folder}`, (rel) => /\/client(\/|$)/.test(rel)),
-    );
+    const skipClient = (rel: string) => /\/client(\/|$)/.test(rel);
+    const extra = Object.values(this.options.config?.domains ?? {}).flatMap((d) => d.paths ?? []);
+    const files = [
+      ...folders.flatMap(({ root, folder }) => this.ws.listSources(`${root}/${folder}`, skipClient)),
+      ...extra.flatMap((path) => (/\.(ts|mts)$/.test(path) ? [this.ws.abs(path)] : this.ws.listSources(path, skipClient))),
+    ];
     this.stats.files = files.length;
 
     // 1. Definitions: every top-level value, and whatever it holds.
@@ -129,23 +188,29 @@ export class YedaExtraction {
     // 2. Elements that need nothing but their own definition.
     for (const event of this.events.values()) this.addEvent(event);
     this.addAggregates();
-    for (const table of this.tables.values()) this.addTable(table);
+    for (const table of this.tables.values()) if (!table.generated) this.addTable(table);
     this.addProjections();
+    for (const file of files) this.addStorages(file);
     // 3. Behaviour: handlers and background work.
     for (const feature of this.features) this.addFeature(feature);
     this.addUnhandledRoutes();
 
-    const elements = [...this.elements.values()];
     const edges = [...this.edges.values()].filter((e) => this.elements.has(e.source) && this.elements.has(e.target));
+    // A generated event that nothing appends and nothing consumes is only a definition.
+    const linked = new Set(edges.flatMap((e) => (e.kind === 'emits' ? [] : [e.source, e.target])));
+    const appended = new Set([...this.elements.values()].flatMap((e) => (e.kind === 'command' || e.kind === 'worker' ? e.appends : [])));
+    for (const event of this.events.values())
+      if (!event.value && !linked.has(event.id) && !appended.has(event.id)) this.elements.delete(event.id);
+    const elements = [...this.elements.values()];
     const used = new Set(elements.map((e) => e.domain).filter((d): d is string => !!d));
-    const domains = folders.map((folder) => this.domain(folder)).filter((d) => used.has(d.id));
+    const domains = folders.map(({ root, folder }) => this.domain(root, folder)).filter((d) => used.has(d.id));
     const { types, rename } = this.types.finalize();
     const draft: Omit<Model, 'types'> = {
       version: 1,
       repo: { name: basename(this.ws.root), adapter: 'yeda' },
       domains: [...new Map(domains.map((d) => [d.id, d])).values()],
       elements,
-      edges,
+      edges: edges.filter((e) => this.elements.has(e.source) && this.elements.has(e.target)),
       checks: [],
     };
     const model: Model = { ...(JSON.parse(rename(JSON.stringify(draft))) as typeof draft), types };
@@ -154,21 +219,24 @@ export class YedaExtraction {
     return model;
   }
 
-  private featureFolders(): string[] {
-    const dir = this.ws.abs(this.featuresDir);
-    if (!existsSync(dir)) return [];
-    return readdirSync(dir, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
-      .map((entry) => entry.name)
-      .filter((name) => !this.options.config?.domains[name]?.ignore)
-      .sort();
+  private featureFolders(): { root: string; folder: string }[] {
+    return this.roots.flatMap((root) => {
+      const dir = this.ws.abs(root);
+      if (!existsSync(dir)) return [];
+      return readdirSync(dir, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+        .map((entry) => entry.name)
+        .filter((name) => !this.options.config?.domains[name]?.ignore)
+        .sort()
+        .map((folder) => ({ root, folder }));
+    });
   }
 
-  private domain(folder: string): Domain {
+  private domain(root: string, folder: string): Domain {
     const override = this.options.config?.domains[folder];
     const id = override?.mergeInto ?? folder;
     const target = this.options.config?.domains[id] ?? override;
-    const path = `${this.featuresDir}/${id}`;
+    const path = `${root}/${id}`;
     const description = target?.description ?? readmeSummary(join(this.ws.abs(path), 'README.md'));
     return {
       id,
@@ -234,26 +302,81 @@ export class YedaExtraction {
   }
 
   private eventOf(value: Value | undefined): EventDef | undefined {
+    // Contract.versioningEvents.created, Aggregate.contract.versioning.versioningEvents.created
+    if (value?.k === 'member' && value.of.k === 'member' && value.of.name === 'versioningEvents')
+      return this.versionedFrom(value.of.of)?.events.get(value.name);
     if (!isCall(value, 'defineEvent')) return undefined;
     const config = value.args[0]?.();
     const name = this.ev.str(prop(config, 'name'));
     if (!name) return undefined;
-    const aggregateType = this.ev.str(prop(config, 'aggregateType')) ?? '';
+    return this.registerEvent(name, this.ev.str(prop(config, 'aggregateType')) ?? '', value.node, {
+      value,
+      payload: () => this.types.expr(prop(config, 'payload')),
+    });
+  }
+
+  private registerEvent(name: string, aggregateType: string, node: ts.Node, extra: Pick<EventDef, 'value' | 'payload'>): EventDef {
     const key = `${name}|${aggregateType}`;
     const existing = this.events.get(key);
     if (existing) return existing;
-    const domain = this.domainOfNode(value.node);
+    const domain = this.domainOfNode(node);
     // The same event name on a second stream type is a different fact.
     const clash = [...this.events.values()].some((e) => e.name === name && e.domain === domain);
     const event: EventDef = {
-      value,
       name,
       aggregateType,
       domain,
       id: elementId(domain, 'event', clash ? `${name}@${aggregateType}` : name),
+      node,
+      ...extra,
     };
     this.events.set(key, event);
     return event;
+  }
+
+  /** The versioning family behind a contract, an aggregate or one of their members. */
+  private versionedFrom(value: Value | undefined): Versioned | undefined {
+    let current = value;
+    while (current?.k === 'member' && (current.name === 'versioning' || current.name === 'contract')) current = current.of;
+    if (isCall(current, 'defineAggregate')) current = prop(current.args[0]?.(), 'contract');
+    if (!isCall(current, 'defineAggregateContract')) return undefined;
+    const cached = this.versioned.get(current.node);
+    if (cached !== undefined) return cached ?? undefined;
+    const mixin = current.args[1]?.();
+    const base = current.args[0]?.();
+    const key = isCall(mixin, 'withVersioning') ? this.ev.str(prop(mixin.args[0]?.(), 'key')) : undefined;
+    const type = this.ev.str(prop(base, 'type'));
+    if (!isCall(mixin, 'withVersioning') || !key || !type) {
+      this.versioned.set(current.node, null);
+      return undefined;
+    }
+    const lifecycle = prop(mixin.args[0]?.(), 'lifecycle');
+    const enabled = (flag: string) => prop(lifecycle, flag)?.k === 'bool' && (prop(lifecycle, flag) as { v: boolean }).v;
+    const data = () => this.types.expr(prop(base, 'schema'));
+    const events = new Map<string, EventDef>();
+    for (const spec of VERSIONING_EVENTS) {
+      if (spec.when && !enabled(spec.when)) continue;
+      const payload = (): TypeExpr | undefined => {
+        if (spec.payload === 'none') return { type: '{}', refs: [], fields: [] };
+        if (spec.payload === 'version')
+          return { type: '{ versionId }', refs: [], fields: [{ name: 'versionId', type: 'string', optional: false, refs: [] }] };
+        const schema = data();
+        return schema
+          ? {
+              type: '{ data, dataSchemaVersion }',
+              refs: schema.refs,
+              fields: [
+                { name: 'data', type: schema.type, optional: false, refs: schema.refs },
+                { name: 'dataSchemaVersion', type: 'int', optional: false, refs: [] },
+              ],
+            }
+          : undefined;
+      };
+      events.set(spec.prop, this.registerEvent(`${key}.${spec.suffix}`, type, mixin.node, { payload }));
+    }
+    const versioned: Versioned = { key, contract: current, events };
+    this.versioned.set(current.node, versioned);
+    return versioned;
   }
 
   private aggregateOf(contract: CallValue): AggregateDef | undefined {
@@ -266,6 +389,7 @@ export class YedaExtraction {
     if (!aggregate) {
       aggregate = { type, domain, id: '', contract };
       this.aggregates.set(key, aggregate);
+      this.versionedFrom(contract);
     }
     return aggregate;
   }
@@ -279,8 +403,10 @@ export class YedaExtraction {
     if (!schema || !name) return undefined;
     const key = `${schema}.${name}`;
     if (!this.tables.has(key)) {
-      const domain = this.domainOfNode(value.node);
-      this.tables.set(key, { value, domain, id: elementId(domain, 'table', key) });
+      // A table built by a platform helper still belongs to the feature that owns the schema.
+      const generated = this.domainOf(value.node.getSourceFile().fileName) === undefined;
+      const domain = this.domainOfNode(generated ? value.recv.node : value.node);
+      this.tables.set(key, { value, domain, id: elementId(domain, 'table', key), generated });
     }
     return key;
   }
@@ -305,8 +431,8 @@ export class YedaExtraction {
   }
 
   private addEvent(event: EventDef) {
-    const config = event.value.args[0]?.();
-    const payload = this.types.expr(prop(config, 'payload'));
+    const config = event.value?.args[0]?.();
+    const payload = event.payload?.();
     const version = prop(config, 'schemaVersion');
     const short = this.label(event.name, event.domain);
     this.add<EventElement>({
@@ -315,10 +441,10 @@ export class YedaExtraction {
       domain: event.domain,
       name: event.name,
       label: event.id.includes('@') ? `${short} (${event.aggregateType})` : short,
-      ...this.describe(event.value),
-      evidence: this.ws.evidence(event.value.node),
+      ...(event.value ? this.describe(event.value) : {}),
+      evidence: this.ws.evidence(event.node),
       ...(payload ? { payload } : {}),
-      ...(version?.k === 'num' ? { schemaVersion: version.v } : {}),
+      ...(version?.k === 'num' ? { schemaVersion: version.v } : event.value ? {} : { schemaVersion: 1 }),
     });
   }
 
@@ -347,15 +473,16 @@ export class YedaExtraction {
         name: label,
         label,
         ...(anchor ? this.describe(anchor) : {}),
-        evidence: this.ws.evidence((anchor ?? firstEvent!.value).node),
+        evidence: this.ws.evidence(anchor ? anchor.node : firstEvent!.node),
         ...(state ? { state } : {}),
         storage: { kind: 'event-store', stream: aggregate.type, snapshot: !!prop(definition, 'snapshot') },
       });
-      const listed = this.eventsIn(prop(config, 'events'));
+      const generated = aggregate.contract ? [...(this.versionedFrom(aggregate.contract)?.events.values() ?? [])] : [];
+      const listed = [...this.eventsIn(prop(config, 'events')), ...generated];
       const emitted = listed.length
         ? listed
         : [...this.events.values()].filter((e) => e.domain === aggregate.domain && e.aggregateType === aggregate.type);
-      for (const event of emitted) this.link(aggregate.id, event.id, 'emits', (aggregate.contract ?? event.value).node);
+      for (const event of emitted) this.link(aggregate.id, event.id, 'emits', aggregate.contract?.node ?? event.node);
     }
   }
 
@@ -443,8 +570,8 @@ export class YedaExtraction {
       domain: table.domain,
       name: `${schema}.${name}`,
       label: name,
-      ...this.describe(value),
-      evidence: this.ws.evidence(value.node),
+      ...(table.generated ? {} : this.describe(value)),
+      evidence: this.ws.evidence(table.generated ? (value.origin?.node ?? (value.recv as CallValue).node) : value.node),
       schema,
       columns,
       primaryKey,
@@ -536,6 +663,131 @@ export class YedaExtraction {
         this.link(id, subscription.id, 'streams', (live as CallValue).node);
       }
     }
+  }
+
+  /** `createVersioningStorage(Aggregate, { projections, tables })`: three projections per storage. */
+  private addStorages(file: string) {
+    const source = this.ws.file(file)?.source;
+    if (!source || !source.text.includes('createVersioningStorage')) return;
+    walk(source, (node) => {
+      if (!ts.isCallExpression(node) || callName(node) !== 'createVersioningStorage') return;
+      const value = this.ev.eval(node, this.ev.scopeAt(node));
+      if (value.k === 'call') this.storageOf(value);
+    });
+  }
+
+  private storageOf(value: Value | undefined): Storage | undefined {
+    if (!isCall(value, 'createVersioningStorage')) return undefined;
+    const known = this.storages.get(value.node);
+    if (known) return known;
+    const versioned = this.versionedFrom(value.args[0]?.());
+    const options = value.args[1]?.();
+    const definition = prop(options, 'projections');
+    if (!versioned || !isCall(definition, 'defineVersioningProjections')) return undefined;
+    const config = definition.args[1]?.();
+    const baseKey = this.ev.str(prop(config, 'key')) ?? versioned.key;
+    const domain = this.domainOfNode(value.node);
+    const base = this.types.expr(prop(versioned.contract.args[0]?.(), 'schema'));
+    const aggregateEvents = [
+      ...this.eventsIn(prop(versioned.contract.args[0]?.(), 'events')),
+      ...versioned.events.values(),
+    ];
+    const tables = prop(options, 'tables');
+    const storage: Storage = { versioned, projections: { drafts: '', published: '', versions: '' } };
+    for (const role of ROLES) {
+      const roleKey = this.ev.str(prop(prop(config, 'roleKeys'), role));
+      const key = roleKey ?? `${baseKey}.${role}`;
+      const id = elementId(domain, 'projection', key);
+      storage.projections[role] = id;
+      const row: TypeExpr | undefined = base && {
+        type: `${capitalize(role.replace(/s$/, ''))}Row<${base.type}>`,
+        refs: base.refs,
+      };
+      const permission = this.permissionKey(prop(prop(config, 'permissions'), role));
+      this.add<ProjectionElement>({
+        id,
+        kind: 'projection',
+        domain,
+        name: key,
+        label: capitalize(humanize(key.split('.').at(-1) ?? key)),
+        evidence: this.ws.evidence(value.node),
+        entity: {
+          name: `${versioned.key}_${role}`,
+          permissions: [],
+          ...(row ? { row } : {}),
+          consumer: `${versioned.key}-${role}`,
+        },
+      });
+      for (const event of aggregateEvents) this.link(event.id, id, 'handles', value.node);
+      const table = tables ? this.ev.member(tables, role) : undefined;
+      const tableKey = this.tableKey(table);
+      if (tableKey) {
+        const def = this.tables.get(tableKey)!;
+        if (!this.elements.has(def.id)) this.addTable(def);
+        this.link(id, def.id, 'writes', value.node);
+      }
+      // The projection is also a live collection clients subscribe to.
+      const tail = roleKey ? (roleKey.startsWith(`${baseKey}.`) ? roleKey.slice(baseKey.length + 1) : roleKey) : role;
+      const subscription = this.add<SubscriptionElement>({
+        id: elementId(domain, 'subscription', `live.${key}`),
+        kind: 'subscription',
+        domain,
+        name: `live.${key}`,
+        label: `live.${key}`,
+        evidence: this.ws.evidence(definition.node),
+        ...(row ? { row } : {}),
+        path: `/api/${baseKey}/collections/${tail}`,
+        ...(permission ? { permission } : {}),
+      });
+      this.link(id, subscription.id, 'streams', definition.node);
+    }
+    this.storages.set(value.node, storage);
+    return storage;
+  }
+
+  /** What calls on versioning storages do: the events they append and the projections they read. */
+  private storageEffects(facts: Facts): { appends: [EventDef, ts.Node][]; reads: [string, ts.Node][] } {
+    const appends: [EventDef, ts.Node][] = [];
+    const reads: [string, ts.Node][] = [];
+    for (const { value, method, node } of facts.opaque) {
+      const storage = this.storageOf(value);
+      if (!storage) continue;
+      const event = STORAGE_COMMANDS[method] && storage.versioned.events.get(STORAGE_COMMANDS[method]);
+      if (event) appends.push([event, node]);
+      const role = STORAGE_READS[method];
+      if (role) reads.push([storage.projections[role], node]);
+    }
+    return { appends, reads };
+  }
+
+  /** `listenEvents(...handlers, { projection })`: a projection without an entity. */
+  private addListener(listener: CallValue, domain: string) {
+    const values = listener.args.map((a) => a());
+    const config = values.at(-1);
+    const definition = prop(config, 'projection');
+    const key =
+      (isCall(definition, 'defineProjection') ? this.ev.str(prop(definition.args[0]?.(), 'key')) : undefined) ??
+      this.ev.str(prop(config, 'consumerName'));
+    if (!key) return;
+    const id = elementId(domain, 'projection', key);
+    const row = isCall(definition, 'defineProjection') ? this.types.expr(prop(definition.args[0]?.(), 'row')) : undefined;
+    const consumer = this.ev.str(prop(config, 'consumerName'));
+    this.add<ProjectionElement>({
+      id,
+      kind: 'projection',
+      domain,
+      name: key,
+      label: capitalize(humanize(key.split('.').at(-1) ?? key)),
+      ...(isCall(definition, 'defineProjection') ? this.describe(definition) : {}),
+      evidence: this.ws.evidence(listener.node),
+      entity: { name: key, permissions: [], ...(row ? { row } : {}), ...(consumer ? { consumer } : {}) },
+    });
+    const handlers = values.slice(0, -1);
+    for (const event of this.eventsIn({ k: 'arr', items: handlers.map((h) => () => h), node: listener.node }))
+      this.link(event.id, id, 'handles', listener.node);
+    const facts = this.reach.analyzeHeld(handlers, listener.node);
+    for (const [table, node] of facts.tableWrites) this.link(id, this.tables.get(this.tableKey(table)!)!.id, 'writes', node);
+    this.linkCalls(id, domain, facts);
   }
 
   private permissionKey(value: Value | undefined): string | undefined {
@@ -669,7 +921,8 @@ export class YedaExtraction {
     return (
       facts.drafts.size > 0 ||
       facts.tableWrites.size > 0 ||
-      [...facts.externals.values()].some((e) => e.write)
+      [...facts.externals.values()].some((e) => e.write) ||
+      this.storageEffects(facts).appends.length > 0
     );
   }
 
@@ -719,8 +972,8 @@ export class YedaExtraction {
 
   private linkWrites(element: CommandElement | WorkerElement, facts: Facts) {
     const appends = new Set<string>();
-    for (const [value, node] of facts.drafts) {
-      const event = this.eventOf(value);
+    const drafted: [EventDef | undefined, ts.Node][] = [...facts.drafts].map(([value, node]) => [this.eventOf(value), node]);
+    for (const [event, node] of [...drafted, ...this.storageEffects(facts).appends]) {
       if (!event || !this.elements.has(event.id)) continue;
       appends.add(event.id);
       const aggregate = this.aggregateOfEvent(event);
@@ -728,7 +981,11 @@ export class YedaExtraction {
     }
     element.appends = [...appends];
     // Without an event store the table is the state: command → table.
-    for (const [table, node] of facts.tableWrites) this.link(element.id, this.tables.get(this.tableKey(table)!)!.id, 'writes', node);
+    for (const [table, node] of facts.tableWrites) {
+      const def = this.tables.get(this.tableKey(table)!)!;
+      if (!this.elements.has(def.id)) this.addTable(def);
+      this.link(element.id, def.id, 'writes', node);
+    }
   }
 
   private linkReads(id: string, facts: Facts) {
@@ -737,7 +994,12 @@ export class YedaExtraction {
       const aggregate = isCall(contract, 'defineAggregateContract') ? this.aggregateOf(contract) : undefined;
       if (aggregate) this.link(aggregate.id, id, 'reads', node);
     }
-    for (const [table, node] of facts.tableReads) this.link(this.tables.get(this.tableKey(table)!)!.id, id, 'reads', node);
+    for (const [table, node] of facts.tableReads) {
+      const def = this.tables.get(this.tableKey(table)!)!;
+      if (!this.elements.has(def.id)) this.addTable(def);
+      this.link(def.id, id, 'reads', node);
+    }
+    for (const [projection, node] of this.storageEffects(facts).reads) this.link(projection, id, 'reads', node);
   }
 
   private linkCalls(id: string, domain: string, facts: Facts) {
@@ -761,31 +1023,26 @@ export class YedaExtraction {
 
   // ---------------------------------------------------------------- workers
 
-  /** A function that appends events or writes a table in its own body. */
-  private isUnit(fn: FnNode): boolean {
-    const cached = this.units.get(fn);
-    if (cached !== undefined) return cached;
-    let found = false;
-    const visit = (node: ts.Node) => {
-      if (found) return;
-      if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
-        const name = node.expression.name.text;
-        if (name === 'appendToStream' || name === 'appendToStreams') found = true;
-      }
-      ts.forEachChild(node, visit);
-    };
-    if (fn.body) visit(fn.body);
-    this.units.set(fn, found);
-    return found;
-  }
-
+  /**
+   * Background work is whatever the start hook calls that changes state:
+   * functions called in its service loop, tasks run once at startup, and
+   * migrations, which are kept apart from the function that triggers them.
+   */
   private addWorkers(start: FnValue, domain: string) {
     const discovery = this.reach.analyze(start);
-    for (const [node, { fn, args, loop }] of discovery.entered) {
-      if (!this.isUnit(node)) continue;
-      const name = fnName(node);
+    for (const listener of discovery.listeners) this.addListener(listener, domain);
+    const isMigration = (fn: FnNode) => MIGRATION.test(fnName(fn) ?? '');
+    const queue: Entry[] = [...discovery.entries];
+    const done = new Set<FnNode>();
+    while (queue.length) {
+      const entry = queue.shift()!;
+      const node = entry.fn.node;
+      if (done.has(node)) continue;
+      done.add(node);
+      const name = workerName(node);
       if (!name) continue;
-      const facts = this.reach.analyze(fn, args, (other) => other !== node && this.isUnit(other));
+      const facts = this.reach.analyze(entry.fn, entry.args, (other) => other !== node && isMigration(other));
+      queue.push(...facts.stopped);
       if (!this.changesState(facts)) continue;
       const worker = this.add<WorkerElement>({
         id: elementId(domain, 'worker', name),
@@ -795,7 +1052,7 @@ export class YedaExtraction {
         label: humanize(name),
         ...this.describeNode(node),
         evidence: this.ws.evidence(node),
-        trigger: /backfill|migrat/i.test(name) ? 'migration' : loop ? 'loop' : 'startup',
+        trigger: isMigration(node) ? 'migration' : entry.loop || facts.loops ? 'loop' : 'startup',
         appends: [],
       });
       this.linkWrites(worker, facts);
@@ -808,6 +1065,17 @@ export class YedaExtraction {
     for (const route of this.routes.values())
       if (!this.handled.has(route.name)) this.stats.skipped.push(route.name);
   }
+}
+
+/** `adoptOrganizations`, or `identitySync.step` for a method of what `createIdentitySync` returns. */
+function workerName(fn: FnNode): string | undefined {
+  const own = fnName(fn);
+  if (!own) return undefined;
+  const outer = enclosingFunction(fn);
+  const owner = outer && fnName(outer);
+  if (!owner) return own;
+  const stem = owner.replace(/^(create|make|build|start)(?=[A-Z])/, '');
+  return `${stem[0]!.toLowerCase()}${stem.slice(1)}.${own}`;
 }
 
 /** The first paragraph of a README, as a one-line description. */

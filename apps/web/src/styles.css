@@ -85,6 +85,7 @@ code, .mono { font-family: var(--font-code); font-size: 12px; }
 .region .lane { font-family: var(--font-ui); font-weight: 600; letter-spacing: .1em; text-transform: uppercase; fill: var(--muted); }
 .region .lanerule { stroke: var(--line); stroke-dasharray: 2 5; }
 .cv.far .region .rmeta { display: none; }
+.overview text { font-family: var(--font-ui); font-weight: 700; fill: var(--fg); stroke: var(--bg); paint-order: stroke; stroke-linejoin: round; pointer-events: none; }
 
 /* nodes */
 .node { cursor: pointer; transition: opacity .18s; outline: none; }

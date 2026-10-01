@@ -2,9 +2,18 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@/platform/*": ["./libs/platform/*/src/index.ts"],
-      "@/orders/contracts": ["./features/orders/contracts/src/index.ts"],
-      "@/billing/contracts": ["./features/billing/contracts/src/index.ts"]
+      "@/platform/*": [
+        "./libs/platform/*/src/index.ts"
+      ],
+      "@/orders/contracts": [
+        "./features/orders/contracts/src/index.ts"
+      ],
+      "@/billing/contracts": [
+        "./features/billing/contracts/src/index.ts"
+      ],
+      "@/pages/contracts": [
+        "./features/pages/contracts/src/index.ts"
+      ]
     }
   }
 }

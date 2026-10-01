@@ -49,6 +49,9 @@ type Props = {
   children?: ReactNode;
 };
 
+/** Below this scale node names are too small to read, and domain names take over. */
+const OVERVIEW_ZOOM = 0.2;
+
 const reducedMotion = () =>
   typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -268,15 +271,19 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(props, ref
     for (const node of view.nodes)
       if (node.domain === domain.id) counts.set(node.kind, (counts.get(node.kind) ?? 0) + weight(node));
     const k = Math.max(zoom.k, 0.05);
+    // From far away a domain reads like a country on a map: one big name across it.
+    const overview = zoom.k < OVERVIEW_ZOOM;
     const titleSize = Math.min(64, 26 * Math.max(1, 0.75 / k));
     const laneSize = Math.min(30, 11 * Math.max(1, 0.8 / k));
     const x0 = r.x + GEOMETRY.pad;
     return [
       <g className="region" key={domain.id}>
         <rect className="rbg" x={r.x} y={r.y} width={r.w} height={r.h} rx={18} />
-        <text className="rtitle" x={r.x + 24} y={r.y + Math.max(40, titleSize * 0.9 + 6)} style={{ fontSize: titleSize }}>
-          {domain.name}
-        </text>
+        {!overview && (
+          <text className="rtitle" x={r.x + 24} y={r.y + Math.max(40, titleSize * 0.9 + 6)} style={{ fontSize: titleSize }}>
+            {domain.name}
+          </text>
+        )}
         <text className="rmeta" x={r.x + 24} y={r.y + 62}>
           {domain.path}
           {'   ·   '}
@@ -385,6 +392,26 @@ export const Canvas = forwardRef<CanvasHandle, Props>(function Canvas(props, ref
               );
             })}
           </g>
+          {zoom.k < OVERVIEW_ZOOM && (
+            <g className="overview">
+              {domains.map((domain) => {
+                const r = layout.regions[domain.id];
+                if (!r) return null;
+                const size = Math.min(26 / Math.max(zoom.k, 0.05), r.h * 0.42, (r.w * 1.5) / Math.max(4, domain.name.length));
+                return (
+                  <text
+                    key={domain.id}
+                    x={r.x + r.w / 2}
+                    y={r.y + r.h / 2 + size * 0.35}
+                    textAnchor="middle"
+                    style={{ fontSize: size, strokeWidth: size * 0.16 }}
+                  >
+                    {domain.name}
+                  </text>
+                );
+              })}
+            </g>
+          )}
         </g>
       </svg>
       {children}
